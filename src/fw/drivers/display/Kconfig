@@ -17,9 +17,17 @@ config DISPLAY_JDI_SF32LB
 
 config DISPLAY_SHARP_LS013B7DH01_NRF5
     bool "Sharp LS013B7DH01 (nRF5)"
-    default y if SOC_NRF52
+    default y if SOC_NRF52 && !BOARD_BANGLE2
     help
       Support for the Sharp LS013B7DH01 display via nRF5.
+
+config DISPLAY_LPM013M126_NRF5
+    bool "JDI LPM013M126 (nRF5)"
+    default y if BOARD_BANGLE2
+    help
+      Support for the JDI LPM013M126 memory-in-pixel color LCD via nRF5
+      (Bangle.js 2). The system UI renders at the FLINT 144x168 mono
+      geometry and the driver letterboxes onto the 176x176 panel.
 
 config DISPLAY_QEMU
     bool "QEMU Framebuffer Display"

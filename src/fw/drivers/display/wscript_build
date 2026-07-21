@@ -15,6 +15,12 @@ elif bld.env.CONFIG_DISPLAY_SHARP_LS013B7DH01_NRF5:
         'driver_gpio',
         'hal_nordic',
     ])
+elif bld.env.CONFIG_DISPLAY_LPM013M126_NRF5:
+    sources.append('lpm013m126/lpm013m126_nrf5.c')
+    use.extend([
+        'driver_gpio',
+        'hal_nordic',
+    ])
 
 bld.objects(
     name='driver_display',
