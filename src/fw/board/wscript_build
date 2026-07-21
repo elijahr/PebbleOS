@@ -10,6 +10,18 @@ if bld.env.CONFIG_BOARD_ASTERIX:
             'drivers',
         ],
     )
+elif bld.env.CONFIG_BOARD_BANGLE2:
+    bld.objects(
+        name='board',
+        source=[
+            'boards/board_bangle2.c',
+        ],
+        use=[
+            'fw_includes',
+            'freertos',
+            'drivers',
+        ],
+    )
 elif bld.env.CONFIG_BOARD_OBELIX:
     bld.objects(
         name='board',
