@@ -4,6 +4,10 @@
 #pragma once
 
 #include "drivers/backlight/pwm.h"
+#include "drivers/imu/kx023/kx023.h"
+#include "drivers/touch/cst816/touch_sensor_definitions.h"
+
+extern const TouchSensor *CST816;
 
 #define BT_VENDOR_ID 0x0EEA
 #define BT_VENDOR_NAME "Core Devices LLC"

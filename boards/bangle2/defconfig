@@ -33,6 +33,21 @@ CONFIG_EXTI=y
 
 CONFIG_GPIO=y
 
+CONFIG_I2C=y
+
+# Track B input sensors.
+# Accelerometer (KX023, polled) is enabled and verified end-to-end in Renode.
+CONFIG_ACCEL_KX023=y
+CONFIG_ACCEL_KX023_SCALE_MG=2000
+# Touch (CST816) driver, board wiring, nonfree blob and Renode model are all in
+# place and the I2C init handshake is verified. Enabling CONFIG_TOUCH here
+# currently regresses the launcher render (boot reaches launcher_main_loop and
+# composites, but the content area stays blank and an unhandled IRQ appears) —
+# root cause not yet isolated. Left off by default so the launcher renders.
+# Re-enable to continue the touch bring-up:
+#   CONFIG_TOUCH=y
+#   CONFIG_TOUCH_CST816=y
+
 CONFIG_PWM=y
 
 CONFIG_RTC=y

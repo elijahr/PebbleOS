@@ -25,6 +25,16 @@ elif bld.env.CONFIG_BOARD_GETAFIX:
             'pebbleos-nonfree/cst816/getafix',
         ],
     )
+elif bld.env.CONFIG_BOARD_BANGLE2:
+    # Bangle.js 2 reuses the getafix CST816S firmware blob (same target version
+    # 0x07); the Renode CST816 model reports that version so the update path is
+    # skipped in emulation.
+    bld(
+        name='cst816_fw',
+        export_includes=[
+            'pebbleos-nonfree/cst816/getafix',
+        ],
+    )
 if bld.env.CONFIG_BOARD_OBELIX:
     includes = [
         'pebbleos-nonfree/gh3x2x/algo_lib/algo_params/HR/04_EXCLUSIVE',
