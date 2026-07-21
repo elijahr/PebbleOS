@@ -1,0 +1,8 @@
+{
+  "comments": [
+    "Per-board normal-firmware resource overrides for bangle2 (Bangle.js 2).",
+    "Empty for the S2 skeleton; the normal firmware track (Milestone 2) fills",
+    "in bangle2-specific assets here."
+  ],
+  "media": []
+}

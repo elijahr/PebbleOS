@@ -1,0 +1,9 @@
+{
+  "comments": [
+    "Per-board PRF resource overrides for bangle2 (Bangle.js 2).",
+    "The PRF recovery UI is provided by the shared prf/base pack, which the",
+    "bangle2 PRF build already links and renders. This board-specific pack",
+    "exists as the override point for future bangle2-only recovery assets."
+  ],
+  "media": []
+}
