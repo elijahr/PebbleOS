@@ -23,12 +23,17 @@ int battery_charge_status_get(BatteryChargeStatus *status) {
   return 0;
 }
 
+// Emulation-friendly defaults: report NOT charging and NO USB so the normal
+// build auto-launches the watchface instead of parking on the Charging modal
+// forever. battery_get_millivolts() reports a fixed ~mid-high charge (4000 mV),
+// which keeps the watch out of the low-power path. Real battery/charge sensing
+// is Track C.
 bool battery_charge_controller_thinks_we_are_charging_impl(void) {
-  return 1;
+  return false;
 }
 
 bool battery_is_usb_connected_impl(void) {
-  return 1;
+  return false;
 }
 
 void battery_set_charge_enable(bool charging_enabled) {
