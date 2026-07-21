@@ -44,11 +44,17 @@ static const BoardConfigButton BOARD_CONFIG_BUTTON = {
   .timer = NRFX_TIMER_INSTANCE(1),
 };
 
-// Non-PMIC power path (Bangle.js 2 has no PMIC). Battery sense and charge
-// detect are wired in Track C; this slot keeps the core power service linkable.
+// Non-PMIC power path (Bangle.js 2 has no PMIC). Battery voltage is sensed by a
+// direct SAADC read on AIN1 (P0.03) and charge presence by the P0.23 GPIO
+// (active low); both are handled inside drivers/battery/battery_bangle2.c.
 static const BoardConfigPower BOARD_CONFIG_POWER = {
   .low_power_threshold = 2,
   .battery_capacity_hours = 168,
+};
+
+// Track C: vibration motor is a plain GPIO on P0.19 (active high, no haptic IC).
+static const BoardConfigActuator BOARD_CONFIG_VIBE = {
+  .ctl = { NRF5_GPIO_RESOURCE_EXISTS, NRF_GPIO_PIN_MAP(0, 19), true },
 };
 
 static const BoardConfigAccel BOARD_CONFIG_ACCEL = {
