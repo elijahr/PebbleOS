@@ -46,15 +46,19 @@ elif bld.env.CONFIG_BOARD_BANGLE2:
 
     # Pre-stub the accel/battery/vibe driver slots so the PRF firmware links.
     # Track B (KX023), Track C (SAADC battery, GPIO vibe) replace these.
+    bangle2_stub_sources = [
+        'stubs/ambient_light.c',
+        'stubs/battery.c',
+        'battery/battery_common.c',
+        'stubs/vibe.c',
+    ]
+    # Track B provides a real accelerometer driver; only stub it when none is set.
+    if not bld.env.CONFIG_ACCEL_KX023:
+        bangle2_stub_sources.append('stubs/accel.c')
+
     bld.objects(
         name='driver_bangle2_stubs',
-        source=[
-            'stubs/accel.c',
-            'stubs/ambient_light.c',
-            'stubs/battery.c',
-            'battery/battery_common.c',
-            'stubs/vibe.c',
-        ],
+        source=bangle2_stub_sources,
         use=[
             'fw_includes',
             'pbl_includes',

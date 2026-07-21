@@ -27,6 +27,11 @@ config ACCEL_LSM6DSO
     help
       Support for the ST LSM6DSO accelerometer/gyroscope.
 
+config ACCEL_KX023
+    bool "Kionix KX023"
+    help
+      Support for the Kionix KX023 accelerometer (polled, no interrupt line).
+
 endchoice
 
 if ACCEL_LIS2DW12
@@ -109,6 +114,16 @@ config ACCEL_LSM6DSO_SCALE_MG
       Acceleration full-scale range in mg (2000, 4000, 8000 or 16000).
 
 endif # ACCEL_LSM6DSO
+
+if ACCEL_KX023
+
+config ACCEL_KX023_SCALE_MG
+    int "Full-scale range (mg)"
+    default 2000
+    help
+      Acceleration full-scale range in mg (2000, 4000 or 8000).
+
+endif # ACCEL_KX023
 
 menuconfig MAG
     bool "Magnetometer"
