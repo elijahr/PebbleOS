@@ -27,8 +27,12 @@ static const BoardConfig BOARD_CONFIG = {
 // touch mapping onto Pebble's button model.
 static const BoardConfigButton BOARD_CONFIG_BUTTON = {
   .buttons = {
+    // Placeholder pin P0.11: unused in this board file and in Espruino
+    // boards/BANGLEJS2.py. Must NOT reuse P0.10 — that is DBG_UART rx (see
+    // DBG_UART_DEVICE.rx_gpio in board_bangle2.c); the idle UART line level
+    // would otherwise read as a permanently-held Back button on real hardware.
     [BUTTON_ID_BACK] =
-        { "Back",   { NRFX_GPIOTE_INSTANCE(0), 2, NRF_GPIO_PIN_MAP(0, 10) }, NRF_GPIO_PIN_PULLDOWN },
+        { "Back",   { NRFX_GPIOTE_INSTANCE(0), 2, NRF_GPIO_PIN_MAP(0, 11) }, NRF_GPIO_PIN_PULLDOWN },
     [BUTTON_ID_UP] =
         { "Up",     { NRFX_GPIOTE_INSTANCE(0), 3, NRF_GPIO_PIN_MAP(0, 4)  }, NRF_GPIO_PIN_PULLDOWN },
     [BUTTON_ID_SELECT] =
