@@ -251,20 +251,10 @@ void display_update(NextRowCallback nrcb, UpdateCompleteCallback uccb) {
 
 bool display_update_in_progress(void) { return s_updating; }
 
-void display_update_boot_frame(uint8_t *framebuffer) {
-  memcpy(s_framebuffer, framebuffer, sizeof(s_framebuffer));
-  prv_encode_frame();
-
-  nrfx_spim_xfer_desc_t desc = {.p_tx_buffer = s_frame, .tx_length = sizeof(s_frame)};
-
-  PBL_ASSERTN(!s_updating);
-  prv_enable_spim();
-  prv_enable_chip_select();
-
-  nrfx_err_t err = nrfx_spim_xfer(&BOARD_CONFIG_DISPLAY.spi, &desc, 0);
-  PBL_ASSERTN(err == NRFX_SUCCESS);
-  xSemaphoreTake(s_sem, portMAX_DELAY);
-
-  prv_disable_chip_select();
-  prv_disable_spim();
-}
+// Boot-animation frame push, only used on the CONFIG_PBLBOOT path (not enabled
+// on bangle2). The previous implementation copied the caller's 8bpp boot
+// framebuffer directly into the retained 1bpp mono buffer, which mismatches the
+// display.h contract (stride/bit-depth) and would render garbage. A
+// wrong-looking-right implementation is worse than none, so leave it an empty
+// stub (as sharp_ls013b7dh01_nrf5.c does) until a boot path actually needs it.
+void display_update_boot_frame(uint8_t *framebuffer) {}
