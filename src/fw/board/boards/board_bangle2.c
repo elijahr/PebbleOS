@@ -38,8 +38,13 @@ static QSPIPort QSPI_PORT = {
         {
             NRF_GPIO_PIN_MAP(0, 15),  // IO0 / MOSI
             NRF_GPIO_PIN_MAP(0, 13),  // IO1 / MISO
-            NRF_GPIO_PIN_MAP(0, 20),  // IO2 (WP) - not wired on Bangle
-            NRF_GPIO_PIN_MAP(0, 21),  // IO3 (HOLD) - not wired on Bangle
+            // Bangle.js 2 wires the flash in dual-IO only (IO0/IO1). Leave IO2/IO3
+            // disconnected: on silicon P0.20/P0.21 are NOT flash pins, and P0.21 is
+            // the heart-rate-sensor power enable (D21 in Espruino boards/BANGLEJS2.py).
+            // Driving them as QSPI PSEL would seize P0.21 and power the HRM on
+            // permanently. NRF_QSPI_PIN_NOT_CONNECTED (0xFF) -> PSEL 0xFFFFFFFF.
+            NRF_QSPI_PIN_NOT_CONNECTED,  // IO2 (WP) - not wired on Bangle
+            NRF_QSPI_PIN_NOT_CONNECTED,  // IO3 (HOLD) - not wired; P0.21 = HRM power
         },
 };
 QSPIPort *const QSPI = &QSPI_PORT;
