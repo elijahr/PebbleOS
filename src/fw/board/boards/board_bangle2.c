@@ -70,6 +70,9 @@ static UARTDevice DBG_UART_DEVICE = {
 UARTDevice *const DBG_UART = &DBG_UART_DEVICE;
 IRQ_MAP_NRFX(UART0_UARTE0, nrfx_uarte_0_irq_handler);
 
+/* display (LPM013M126 on SPIM3 via interrupt-driven nrfx_spim EasyDMA) */
+IRQ_MAP_NRFX(SPIM3, nrfx_spim_3_irq_handler);
+
 /* buttons */
 IRQ_MAP_NRFX(TIMER1, nrfx_timer_1_irq_handler);
 IRQ_MAP_NRFX(TIMER2, nrfx_timer_2_irq_handler);
