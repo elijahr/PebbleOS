@@ -42,8 +42,10 @@ static QSPIFlashState s_qspi_flash_state;
 static QSPIFlash QSPI_FLASH_DEVICE = {
     .state = &s_qspi_flash_state,
     .qspi = &QSPI_PORT,
-    .read_mode = QSPI_FLASH_READ_READ4IO,
-    .write_mode = QSPI_FLASH_WRITE_PP4O,
+    // Only IO0 (P0.15) and IO1 (P0.13) are wired on the Bangle flash bus, so
+    // reads use dual-IO and writes stay single-line (page program).
+    .read_mode = QSPI_FLASH_READ_READ2IO,
+    .write_mode = QSPI_FLASH_WRITE_PP,
 };
 QSPIFlash *const QSPI_FLASH = &QSPI_FLASH_DEVICE;
 

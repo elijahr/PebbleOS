@@ -12,6 +12,8 @@
 #include "flash_region_gd25lq255e.h"
 #elif defined(CONFIG_FLASH_GD25Q256E)
 #include "flash_region_gd25q256e.h"
+#elif defined(CONFIG_FLASH_BANGLE2)
+#include "flash_region_bangle2.h"
 #endif
 
 #ifdef CONFIG_PBLBOOT
