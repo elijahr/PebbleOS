@@ -33,6 +33,34 @@ elif bld.env.CONFIG_BOARD_ASTERIX:
         'driver_task_watchdog',
     ])
 
+elif bld.env.CONFIG_BOARD_BANGLE2:
+    bld.env.DRIVERS.extend([
+        'driver_button',
+        'driver_mcu',
+        'driver_mpu',
+        'driver_nrf5_hfxo',
+        'driver_otp',
+        'driver_task_watchdog',
+        'driver_bangle2_stubs',
+    ])
+
+    # Pre-stub the accel/battery/vibe driver slots so the PRF firmware links.
+    # Track B (KX023), Track C (SAADC battery, GPIO vibe) replace these.
+    bld.objects(
+        name='driver_bangle2_stubs',
+        source=[
+            'stubs/accel.c',
+            'stubs/ambient_light.c',
+            'stubs/battery.c',
+            'battery/battery_common.c',
+            'stubs/vibe.c',
+        ],
+        use=[
+            'fw_includes',
+            'pbl_includes',
+        ],
+    )
+
 elif bld.env.CONFIG_BOARD_OBELIX:
     bld.env.DRIVERS.extend([
         'driver_button',
