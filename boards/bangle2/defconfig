@@ -47,6 +47,10 @@ CONFIG_ACCEL_KX023_SCALE_MG=2000
 # the UI; it clears now that the BLE stub is selected.
 CONFIG_TOUCH=y
 CONFIG_TOUCH_CST816=y
+# Bangle.js 2 has a single physical button, so touch has to cover the rest of
+# the four-button UI: swipe up/down -> UP/DOWN, tap -> SELECT. The single-button
+# short=SELECT / long=BACK remap is a board-config flag (board_bangle2.h).
+CONFIG_TOUCH_NAV_BUTTONS=y
 
 CONFIG_PWM=y
 

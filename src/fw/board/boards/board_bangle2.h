@@ -41,6 +41,11 @@ static const BoardConfigButton BOARD_CONFIG_BUTTON = {
         { "Down",   { NRFX_GPIOTE_INSTANCE(0), 5, NRF_GPIO_PIN_MAP(0, 28) }, NRF_GPIO_PIN_PULLDOWN },
   },
   .active_high = true,
+  // Only P0.17 (SELECT) is a real button; the other three slots are dead
+  // placeholder GPIOs. Time-disambiguate the one button: short press = SELECT,
+  // long hold = BACK. Combined with touch swipe -> UP/DOWN (CONFIG_TOUCH_NAV_
+  // BUTTONS) this makes the four-button UI fully navigable on one button + touch.
+  .select_short_back_long = true,
   .timer = NRFX_TIMER_INSTANCE(1),
 };
 
