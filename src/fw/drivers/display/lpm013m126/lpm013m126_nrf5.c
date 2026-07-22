@@ -27,6 +27,7 @@
 #include "board/display.h"
 #include "drivers/gpio.h"
 #include "kernel/events.h"
+#include "system/logging.h"
 #include "system/passert.h"
 #include "util/reverse.h"
 
@@ -54,8 +55,10 @@
 // 2-byte header (command + line address) precedes each line's pixel payload.
 #define LCD_ROW_HEADER_BYTES 2
 #define LCD_LINE_STRIDE (LCD_ROW_HEADER_BYTES + LCD_LINE_DATA_BYTES)
-// Full frame: every panel line plus 2 trailing dummy bytes to flush the panel.
-#define LCD_FRAME_BYTES (LCD_LINE_STRIDE * LCD_PANEL_HEIGHT + 2)
+// Trailing dummy bytes that flush the panel after the last line of an update.
+#define LCD_TRAILER_BYTES 2
+// Full frame: every panel line plus the trailing flush.
+#define LCD_FRAME_BYTES (LCD_LINE_STRIDE * LCD_PANEL_HEIGHT + LCD_TRAILER_BYTES)
 
 // 3bpp color words.
 #define LCD_COLOR_WHITE 0x7U
@@ -124,12 +127,20 @@ static inline bool prv_fb_pixel(int fb_x, int fb_y) {
   return (row[fb_x >> 3] >> (fb_x & 7)) & 1U;
 }
 
-// Encode the retained mono framebuffer into the full-panel DMA buffer.
-static void prv_encode_frame(void) {
-  memset(s_frame, 0, sizeof(s_frame));
+// Encode panel lines [y_start .. y_end] (inclusive, 0-based panel rows) from the
+// retained mono framebuffer into the compact DMA buffer, LSB-first per Espruino's
+// encoding, followed by the trailing flush bytes. Returns the number of bytes to
+// clock out. Every emitted line is self-addressed (its 2-byte header carries the
+// 1-based panel row), so the memory-in-pixel panel writes each line to its own
+// address and leaves all other lines untouched — which is what lets a partial
+// (dirty-rows-only) transfer update just the changed lines.
+static size_t prv_encode_lines(int y_start, int y_end) {
+  const int count = y_end - y_start + 1;
+  const size_t len = (size_t)count * LCD_LINE_STRIDE + LCD_TRAILER_BYTES;
+  memset(s_frame, 0, len);
 
   uint8_t *line = s_frame;
-  for (int y = 0; y < LCD_PANEL_HEIGHT; y++) {
+  for (int y = y_start; y <= y_end; y++) {
     const int panel_y = s_rotated_180 ? (LCD_PANEL_HEIGHT - 1 - y) : y;
     line[0] = (uint8_t)reverse_byte(LCD_CMD_UPDATE_3BPP);
     line[1] = (uint8_t)reverse_byte((uint8_t)(y + 1));
@@ -150,7 +161,14 @@ static void prv_encode_frame(void) {
     }
     line += LCD_LINE_STRIDE;
   }
-  // Trailing dummy bytes already zeroed by memset.
+  // Trailing flush bytes already zeroed by memset.
+  return len;
+}
+
+// Encode the full panel (all lines incl. the letterbox border) into the DMA
+// buffer. Used by the clear/init path, which must lay down the constant border.
+static size_t prv_encode_frame(void) {
+  return prv_encode_lines(0, LCD_PANEL_HEIGHT - 1);
 }
 
 static void prv_terminate_transfer(void *data) {
@@ -228,16 +246,50 @@ void display_update(NextRowCallback nrcb, UpdateCompleteCallback uccb) {
 
   PBL_ASSERTN(!s_updating);
 
-  // Absorb the offered rows into the retained mono framebuffer.
+  // Absorb the offered rows into the retained mono framebuffer, tracking the
+  // dirty span so only the changed panel lines are re-transmitted. The panel
+  // keeps whatever we do not rewrite, so the untouched lines (and the constant
+  // letterbox border laid down by display_clear) stay as they are.
+  int dirty_min = PBL_DISPLAY_HEIGHT;
+  int dirty_max = -1;
   while (nrcb(&row)) {
     if (row.address < PBL_DISPLAY_HEIGHT) {
       memcpy(&s_framebuffer[row.address * FB_ROW_BYTES], row.data, FB_ROW_BYTES);
+      if ((int)row.address < dirty_min) {
+        dirty_min = (int)row.address;
+      }
+      if ((int)row.address > dirty_max) {
+        dirty_max = (int)row.address;
+      }
     }
   }
 
-  prv_encode_frame();
+  size_t len;
+  if (dirty_max < 0) {
+    // No rows offered: nothing changed. Clock only the trailing flush so the
+    // transfer still completes (and fires the completion callback) without
+    // rewriting any line.
+    memset(s_frame, 0, LCD_TRAILER_BYTES);
+    len = LCD_TRAILER_BYTES;
+  } else {
+    // Map the dirty framebuffer rows to panel line indices. Framebuffer row r
+    // lands at panel line r + LETTERBOX_OFFSET_Y, mirrored end to end under 180
+    // rotation. The letterbox border lines never change, so they fall outside
+    // this span (already written by display_clear).
+    int y_lo, y_hi;
+    if (s_rotated_180) {
+      y_lo = (LCD_PANEL_HEIGHT - 1) - (dirty_max + LETTERBOX_OFFSET_Y);
+      y_hi = (LCD_PANEL_HEIGHT - 1) - (dirty_min + LETTERBOX_OFFSET_Y);
+    } else {
+      y_lo = dirty_min + LETTERBOX_OFFSET_Y;
+      y_hi = dirty_max + LETTERBOX_OFFSET_Y;
+    }
+    len = prv_encode_lines(y_lo, y_hi);
+    PBL_LOG_DBG("display_update: rows %d..%d -> %d lines, %u bytes",
+                dirty_min, dirty_max, y_hi - y_lo + 1, (unsigned)len);
+  }
 
-  nrfx_spim_xfer_desc_t desc = {.p_tx_buffer = s_frame, .tx_length = sizeof(s_frame)};
+  nrfx_spim_xfer_desc_t desc = {.p_tx_buffer = s_frame, .tx_length = len};
 
   prv_enable_spim();
   prv_enable_chip_select();
