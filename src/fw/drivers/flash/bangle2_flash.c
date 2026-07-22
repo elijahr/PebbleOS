@@ -3,12 +3,30 @@
 
 // Flash part driver for the Bangle.js 2 (SMA-Q3) external SPI NOR.
 //
-// The concrete part number is not named in the Espruino source (a generic SPI
-// NOR driver is used); only the capacity (8 MB / 64 Mbit), the pins, and the
-// dual-IO 2x-read capability are known. This driver uses a generic dual-IO SPI
-// NOR opcode set (JEDEC standard opcodes). No security-register / OTP support
-// is exposed (num_sec_regs = 0), so otp_get_slot() degrades gracefully to
-// "no serial" rather than requiring a modeled security-register array.
+// The concrete part number is not named in the Espruino source: the Bangle.js 2
+// (BANGLEJS_Q3, boards/BANGLEJS2.py) bit-bangs plain GPIO SPI to its 8 MB flash
+// (CS D14 / SCK D16 / MOSI/IO0 D15 / MISO/IO1 D13), NOT the nRF52840 QSPI
+// peripheral, and never issues RDID — so only the capacity (8 MB / 64 Mbit), the
+// pins, and the dual-IO 2x-read capability are known from the vendor source, and
+// the true JEDEC id is UNKNOWN pending a hardware teardown.
+//
+// UNRESOLVED FORK: this driver targets the nRF52840 QSPI peripheral (via
+// qspi_flash_init / nrf5 qspi.c), which is an emulator-vs-hardware divergence —
+// the real watch would need either the QSPI peripheral routed to those GPIOs or
+// a bit-banged/SPIM SPI-NOR driver. Flagged for a design decision.
+//
+// Because the emulator must be able to *fail* a wrong flash driver at boot
+// (making chip-ID validation real instead of vacuous), a concrete real part is
+// ASSUMED here as a defensible placeholder: GigaDevice GD25Q64E, a
+// current-production 64 Mbit dual-IO SPI-NOR whose RDID (0x9F) returns C8 40 17.
+// This is NOT silicon-confirmed for the SMA-Q3 — if a teardown names a different
+// part, update qspi_id_value / name to match. The boot whoami check below proves
+// the validation MECHANISM works (RDID issued, compared, mismatch fails boot); it
+// does NOT prove the silicon identity, since the model is co-tuned to this same
+// assumed id. This driver uses a generic dual-IO SPI NOR opcode set (JEDEC
+// standard opcodes). No security-register / OTP support is exposed
+// (num_sec_regs = 0), so otp_get_slot() degrades gracefully to "no serial"
+// rather than requiring a modeled security-register array.
 //
 // Modeled on drivers/flash/gd25lq255e.c.
 
@@ -17,14 +35,25 @@
 #include "drivers/flash/qspi_flash.h"
 #include "drivers/flash/qspi_flash_part_definitions.h"
 #include "flash_region/flash_region.h"
+#include "system/logging.h"
 #include "system/passert.h"
 #include "system/status_codes.h"
 #include "pbl/util/math.h"
 #include "pbl/util/size.h"
 
+#include <inttypes.h>
+
 static bool s_protected;
 static FlashAddress s_protected_start;
 static FlashAddress s_protected_end;
+
+// Boot-time JEDEC chip-ID validation result. Set by flash_impl_init(): true once
+// qspi_flash_check_whoami() has confirmed the attached part matches
+// QSPI_FLASH_PART.qspi_id_value. Exposed as a module global (not just a local)
+// so the emulator harness can read it back over the bus as direct evidence that
+// the RDID was issued and matched, rather than inferring it from downstream boot
+// progress.
+static bool s_flash_whoami_ok;
 
 static QSPIFlashPart QSPI_FLASH_PART = {
     .instructions =
@@ -80,9 +109,12 @@ static QSPIFlashPart QSPI_FLASH_PART = {
     .supports_fast_read_ddr = false,
     /* Dual-IO reads need no quad-enable bit. */
     .qer_type = JESD216_DW15_QER_NONE,
-    .qspi_id_value = 0x001740ef, /* generic 64 Mbit placeholder; not validated at boot */
+    /* ASSUMED PLACEHOLDER (see header): GigaDevice GD25Q64E RDID (0x9F) C8 40 17 ->
+     * manufacturer 0xC8 (GigaDevice), device 0x4017 (64 Mbit). Enforced at boot by
+     * flash_impl_init() below. Real Bangle.js 2 JEDEC id is UNVERIFIED. */
+    .qspi_id_value = 0x001740c8,
     .size = 0x800000, /* 8 MB */
-    .name = "BANGLE2_8MB",
+    .name = "GD25Q64E",
 };
 
 static status_t prv_flash_check_protected(FlashAddress addr) {
@@ -131,6 +163,26 @@ status_t flash_impl_unprotect(void) {
 
 status_t flash_impl_init(bool coredump_mode) {
   qspi_flash_init(QSPI_FLASH, &QSPI_FLASH_PART, coredump_mode);
+
+  // Validate the attached flash by its JEDEC id before trusting it for PFS,
+  // resources, coredumps, or firmware storage. A watch fitted with the wrong
+  // SPI-NOR part cannot boot correctly, so a mismatch is fatal rather than
+  // silently ignored -- this is the check that makes chip detection real instead
+  // of vacuous. (nrf5 qspi_flash_check_whoami() reads 3 RDID bytes into a
+  // uint32_t; on this port Renode zero-fills RAM so the untouched MSB reads 0 and
+  // the compare is exact. See the reconciliation note in the harness / report:
+  // on real silicon that MSB is uninitialized stack and the shared nrf5 driver
+  // should zero-init it.)
+  s_flash_whoami_ok = qspi_flash_check_whoami(QSPI_FLASH);
+  if (!s_flash_whoami_ok) {
+    PBL_LOG_ERR("QSPI flash WHOAMI mismatch: attached part is not %s (expected JEDEC 0x%06" PRIx32
+                ") -- refusing to boot on unknown flash",
+                QSPI_FLASH_PART.name, QSPI_FLASH_PART.qspi_id_value);
+    PBL_ASSERT(s_flash_whoami_ok, "QSPI flash JEDEC id mismatch");
+  }
+  PBL_LOG_INFO("QSPI flash %s detected (JEDEC 0x%06" PRIx32 ")", QSPI_FLASH_PART.name,
+               QSPI_FLASH_PART.qspi_id_value);
+
   return S_SUCCESS;
 }
 
