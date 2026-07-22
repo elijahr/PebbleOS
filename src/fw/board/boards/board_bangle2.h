@@ -9,6 +9,24 @@
 
 extern const TouchSensor *CST816;
 
+// Stage 2 sensors on software (bit-bang) I2C buses. The chip drivers reference
+// these global slave-port symbols by name (drivers/pressure/bmp280.c etc.).
+extern I2CSlavePort *const I2C_BMP280;
+extern I2CSlavePort *const I2C_MAG;
+
+// VC31 heart-rate sensor (interface-only) on the repurposed bit-bang HRM bus.
+extern HRMDevice *const HRM;
+
+// Magnetometer axis orientation. The Bangle.js 2 compass is an UNKNOWN part
+// (Espruino UNKNOWN_0C); with no reference frame to correct, use the identity
+// mapping (raw device axes straight through). No data-ready interrupt is wired.
+static const BoardConfigMag BOARD_CONFIG_MAG = {
+  .mag_config = {
+    .axes_offsets = { [AXIS_X] = 0, [AXIS_Y] = 1, [AXIS_Z] = 2 },
+    .axes_inverts = { [AXIS_X] = false, [AXIS_Y] = false, [AXIS_Z] = false },
+  },
+};
+
 #define BT_VENDOR_ID 0x0EEA
 #define BT_VENDOR_NAME "Core Devices LLC"
 

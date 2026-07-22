@@ -47,6 +47,17 @@ CONFIG_ACCEL_KX023_SCALE_MG=2000
 # the UI; it clears now that the BLE stub is selected.
 CONFIG_TOUCH=y
 CONFIG_TOUCH_CST816=y
+# Barometer/pressure (BMP280, Stage 2) on a software bit-bang I2C bus at 0x76.
+CONFIG_PRESSURE=y
+CONFIG_PRESSURE_BMP280=y
+# Magnetometer (Stage 2): unidentified part at 0x0C (Espruino UNKNOWN_0C) on a
+# software bit-bang I2C bus. Generic reverse-engineered driver.
+CONFIG_MAG=y
+CONFIG_MAG_GENERIC=y
+# Heart-rate (Stage 2): Vcare VC31/VC31B at 0x33 on the repurposed bit-bang HRM
+# bus. INTERFACE-ONLY (proprietary PPG->BPM algorithm is not implemented).
+CONFIG_HRM=y
+CONFIG_HRM_VC31=y
 # Bangle.js 2 has a single physical button, so touch has to cover the rest of
 # the four-button UI: swipe up/down -> UP/DOWN, tap -> SELECT. The single-button
 # short=SELECT / long=BACK remap is a board-config flag (board_bangle2.h).
