@@ -8,10 +8,20 @@ menuconfig PRESSURE
 
 if PRESSURE
 
+choice PRESSURE_DRIVER
+    prompt "Pressure Sensor Driver"
+
 config PRESSURE_BMP390
     bool "Bosch BMP390"
     help
       Support for the Bosch BMP390 barometric pressure sensor.
+
+config PRESSURE_BMP280
+    bool "Bosch BMP280"
+    help
+      Support for the Bosch BMP280 barometric pressure sensor.
+
+endchoice
 
 module = DRIVER_PRESSURE
 module-str = Pressure Sensor

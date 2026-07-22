@@ -42,3 +42,11 @@ void pressure_init(void) {
     (void) prv_write_register(I2C_BMP390, BMP390_PWR_CTRL, 0);
   }
 }
+
+bool pressure_read(int32_t *pressure_pa, int32_t *temperature_c) {
+  // This driver only probes the chip id; a compensated read path is not
+  // implemented for the BMP390 here.
+  (void) pressure_pa;
+  (void) temperature_c;
+  return false;
+}
