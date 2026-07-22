@@ -145,6 +145,13 @@ config MAG_MMC5603NJ
     help
       Support for the MEMSIC MMC5603NJ magnetometer.
 
+config MAG_GENERIC
+    bool "Generic/unknown I2C magnetometer"
+    help
+      Reverse-engineered driver for an unidentified I2C magnetometer (e.g. the
+      Bangle.js 2 "UNKNOWN_0C" compass). Presence probe + raw XYZ read only; no
+      part-specific calibration or scaling.
+
 endchoice
 
 endif # MAG
