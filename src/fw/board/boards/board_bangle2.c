@@ -143,6 +143,65 @@ static const KX023Config s_kx023_config = {
 };
 const KX023Config *const KX023 = &s_kx023_config;
 
+// --- Stage 1: software (bit-bang) I2C foundation ------------------------------
+// The real Bangle.js 2 heart-rate/mag/pressure sensors sit on bit-banged GPIO
+// I2C buses because all four nRF52840 hardware serial instances are already
+// used (display SPIM3, flash SPIM2, touch TWIM0, accel TWIM1). This declares a
+// SOFTWARE I2C bus on the spare HRM GPIOs (SCL P0.24, SDA absolute pin 32 =
+// P1.00, the "P0.32" HRM line) so the foundation can be proven end-to-end
+// before any real sensor driver is added. A boot-time self-test reads one known
+// register from a test slave over the bit-bang driver; the banglejs2-renode
+// soft_i2c harness asserts the value round-tripped through the GPIO->I2C
+// decoder and the slave.
+#define SOFT_I2C_SCL_PIN NRF_GPIO_PIN_MAP(0, 24)
+#define SOFT_I2C_SDA_PIN NRF_GPIO_PIN_MAP(1, 0)  // absolute pin 32 (HRM "P0.32")
+#define SOFT_I2C_SLAVE_ADDR 0x50
+#define SOFT_I2C_TEST_REG 0x42
+
+static I2CBusState s_i2c_soft_bus_state = {};
+static const I2CBusHal s_i2c_soft_bus_hal = {
+    .type = I2CBusHalType_BitBang,
+    .bitbang_half_period_us = 2,
+};
+static const I2CBus s_i2c_soft_bus = {
+    .state = &s_i2c_soft_bus_state,
+    .hal = &s_i2c_soft_bus_hal,
+    .scl_gpio = {.gpio = NRF5_GPIO_RESOURCE_EXISTS, .gpio_pin = SOFT_I2C_SCL_PIN},
+    .sda_gpio = {.gpio = NRF5_GPIO_RESOURCE_EXISTS, .gpio_pin = SOFT_I2C_SDA_PIN},
+    .name = "I2C_SOFT",
+};
+I2CBus *const I2C_SOFT_BUS = &s_i2c_soft_bus;
+
+static const I2CSlavePort s_i2c_soft_slave = {
+    .bus = &s_i2c_soft_bus,
+    // 8-bit address stored; the driver shifts right by one for the wire address.
+    .address = SOFT_I2C_SLAVE_ADDR << 1,
+};
+
+// Self-test results, read back from RAM by the soft_i2c harness (resolved from
+// the ELF). Volatile so the compiler cannot fold the read away.
+volatile uint8_t g_soft_i2c_test_ran = 0;
+volatile uint8_t g_soft_i2c_test_ok = 0;
+volatile uint8_t g_soft_i2c_test_value = 0;
+volatile uint8_t g_soft_i2c_test_reg = SOFT_I2C_TEST_REG;
+
+static void prv_soft_i2c_selftest(void) {
+  i2c_use(&s_i2c_soft_slave);
+  uint8_t value = 0;
+  bool ok = i2c_read_register(&s_i2c_soft_slave, SOFT_I2C_TEST_REG, &value);
+  i2c_release(&s_i2c_soft_slave);
+
+  g_soft_i2c_test_value = value;
+  g_soft_i2c_test_ok = ok ? 1 : 0;
+  g_soft_i2c_test_ran = 1;
+
+  if (ok) {
+    PBL_LOG_INFO("soft I2C self-test: reg 0x%02x = 0x%02x", SOFT_I2C_TEST_REG, value);
+  } else {
+    PBL_LOG_ERR("soft I2C self-test FAILED (no ACK / wrong wiring)");
+  }
+}
+
 void board_early_init(void) {
   PBL_LOG_ERR("bangle2 early init");
 
@@ -161,4 +220,6 @@ void board_early_init(void) {
 void board_init(void) {
   i2c_init(I2C_TOUCH_BUS);
   i2c_init(I2C_ACCEL_BUS);
+  i2c_init(I2C_SOFT_BUS);
+  prv_soft_i2c_selftest();
 }
