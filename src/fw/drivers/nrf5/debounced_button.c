@@ -34,7 +34,34 @@ static const uint32_t NUM_DEBOUNCE_SAMPLES = 20;
 // reset-buttons-held timeout is set to 5 seconds:
 #define RESET_THRESHOLD_SAMPLES (5 * DEBOUNCE_SAMPLES_PER_SECOND)
 
+// Single-physical-button remap (BOARD_CONFIG_BUTTON.select_short_back_long):
+// a SELECT hold of at least this long is reported as BACK; a shorter press is
+// reported as SELECT on release. 500 ms is comfortably longer than a tap yet
+// short enough to feel responsive, and well under the 1500 ms BACK-hold
+// force-quit so the synthesized BACK click (emitted once, as a down+up pair)
+// never trips it.
+#define SELECT_BACK_LONG_PRESS_MS 500
+#define SELECT_BACK_LONG_PRESS_SAMPLES \
+    ((DEBOUNCE_SAMPLES_PER_SECOND * SELECT_BACK_LONG_PRESS_MS) / 1000)
+
 static void prv_timer_handler(nrf_timer_event_t evt, void *ctx);
+
+// Emit a full press (down immediately followed by up) for a button that has no
+// dedicated GPIO — used by the single-button SELECT/BACK remap to synthesize
+// SELECT and BACK clicks. Returns whether a context switch should follow.
+static bool prv_emit_synthetic_click(ButtonId button_id) {
+  PebbleEvent down = {
+    .type = PEBBLE_BUTTON_DOWN_EVENT,
+    .button.button_id = button_id,
+  };
+  PebbleEvent up = {
+    .type = PEBBLE_BUTTON_UP_EVENT,
+    .button.button_id = button_id,
+  };
+  bool should_context_switch = event_put_isr(&down);
+  should_context_switch = event_put_isr(&up) || should_context_switch;
+  return should_context_switch;
+}
 
 static void initialize_button_timer(void) {
   nrfx_timer_config_t config = {
@@ -113,6 +140,12 @@ static void prv_timer_handler(nrf_timer_event_t evt, void *ctx) {
   static uint32_t s_button_timers[] = {0, 0, 0, 0};
   // A bitset of the current states of the buttons after the debouncing is done.
   static uint32_t s_debounced_button_state = 0;
+  // Single-button SELECT/BACK remap state: how long the physical SELECT button
+  // has been held (in samples), and whether this hold has already been reported
+  // as a BACK press.
+  static uint32_t s_select_hold_samples = 0;
+  static bool s_select_long_fired = false;
+  const bool remap_select = BOARD_CONFIG_BUTTON.select_short_back_long;
 
   // Should we tell the scheduler to attempt to context switch after this function has completed?
   bool should_context_switch = pdFALSE;
@@ -149,11 +182,48 @@ static void prv_timer_handler(nrf_timer_event_t evt, void *ctx) {
         clear_stuck_button(i);
       }
 
+      if (remap_select && i == BUTTON_ID_SELECT) {
+        // Single physical button: disambiguate short vs long by hold time.
+        if (is_pressed) {
+          // Press accepted: start timing the hold, emit nothing yet.
+          s_select_hold_samples = 0;
+          s_select_long_fired = false;
+        } else if (!s_select_long_fired) {
+          // Released before the long threshold -> a short press is a SELECT
+          // click (fires on release, since a press is only "short" once ended).
+          should_context_switch = prv_emit_synthetic_click(BUTTON_ID_SELECT) ||
+                                  should_context_switch;
+          s_select_hold_samples = 0;
+        } else {
+          // Released after BACK was already emitted: nothing more to do.
+          s_select_hold_samples = 0;
+        }
+        continue;
+      }
+
       PebbleEvent e = {
         .type = (is_pressed) ? PEBBLE_BUTTON_DOWN_EVENT : PEBBLE_BUTTON_UP_EVENT,
         .button.button_id = i
       };
       should_context_switch = event_put_isr(&e);
+    }
+  }
+
+  // Single-button remap: while SELECT is held, keep the sampler alive and count
+  // toward the long-press threshold. Crossing it reports a one-shot BACK click.
+  if (remap_select) {
+    if (bitset32_get(&s_debounced_button_state, BUTTON_ID_SELECT)) {
+      if (!s_select_long_fired) {
+        can_power_down_tim4 = false;  // keep sampling so the hold can be timed
+        s_select_hold_samples += 1;
+        if (s_select_hold_samples >= SELECT_BACK_LONG_PRESS_SAMPLES) {
+          s_select_long_fired = true;
+          should_context_switch = prv_emit_synthetic_click(BUTTON_ID_BACK) ||
+                                  should_context_switch;
+        }
+      }
+    } else {
+      s_select_hold_samples = 0;
     }
   }
 

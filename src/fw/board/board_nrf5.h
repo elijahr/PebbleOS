@@ -145,6 +145,12 @@ typedef struct {
   const ButtonConfig buttons[NUM_BUTTONS];
   const ButtonComConfig button_com;
   const bool active_high;
+  //! Single-physical-button remap. When true, the one real button wired to
+  //! BUTTON_ID_SELECT is time-disambiguated by the debounce sampler: a short
+  //! press emits SELECT (on release), a long hold emits BACK. Lets a
+  //! one-button watch drive the four-button UI globally. Defaults to false
+  //! (stock four-button behavior) for every other board.
+  const bool select_short_back_long;
   nrfx_timer_t timer;
 } BoardConfigButton;
 
