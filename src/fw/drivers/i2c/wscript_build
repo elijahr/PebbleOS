@@ -7,6 +7,9 @@ sources = ['common.c']
 if bld.env.CONFIG_I2C_NRF5:
     use.append('hal_nordic')
     sources.append('nrf5.c')
+    # Software bit-bang master, dispatched per-bus by nrf5.c for buses declared
+    # I2CBusHalType_BitBang (sensors on spare GPIOs, e.g. HRM/mag/pressure).
+    sources.append('bitbang.c')
 elif bld.env.CONFIG_I2C_SF32LB:
     use.append('hal_sifli')
     sources.append('sf32lb.c')
