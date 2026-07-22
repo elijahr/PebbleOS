@@ -338,6 +338,12 @@ static void prv_process_pending_messages(void* context) {
     case CST816_GESTURE_DOUBLE_CLICK:
       touch_handle_gesture(TouchGesture_DoubleTap, point.x, point.y);
       break;
+    case CST816_GESTURE_UP:
+      touch_handle_gesture(TouchGesture_SwipeUp, point.x, point.y);
+      break;
+    case CST816_GESTURE_DOWN:
+      touch_handle_gesture(TouchGesture_SwipeDown, point.x, point.y);
+      break;
     default:
       break;
   }

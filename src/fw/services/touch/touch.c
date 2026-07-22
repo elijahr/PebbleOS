@@ -4,6 +4,7 @@
 #include "pbl/services/touch/touch.h"
 #include "pbl/services/touch/touch_event.h"
 
+#include "drivers/button_id.h"
 #include "drivers/display/display.h"
 #include "drivers/touch/touch_sensor.h"
 #include "kernel/events.h"
@@ -190,6 +191,33 @@ void touch_handle_update(TouchState touch_state, int16_t x, int16_t y) {
   mutex_unlock(s_touch_mutex);
 }
 
+// Touch-to-button navigation shim. On devices with a touchscreen but fewer
+// than four physical buttons (e.g. Bangle.js 2), translate touch gestures into
+// synthetic Pebble button events so the button-driven UI (launcher, menus,
+// watchface) becomes navigable: swipe up/down -> UP/DOWN, tap -> SELECT. The
+// synthetic events flow through the normal kernel button pipeline, so they are
+// indistinguishable from hardware presses to every downstream ClickManager.
+//
+// This runs on the system task (the CST816 driver defers its work there), a
+// non-ISR context, so event_put() is the correct queueing call.
+static void prv_synthesize_nav_button(ButtonId button_id) {
+#if CONFIG_TOUCH_NAV_BUTTONS
+  PebbleEvent down = {
+    .type = PEBBLE_BUTTON_DOWN_EVENT,
+    .button.button_id = button_id,
+  };
+  PebbleEvent up = {
+    .type = PEBBLE_BUTTON_UP_EVENT,
+    .button.button_id = button_id,
+  };
+  PBL_LOG_DBG("Touch nav: synthesizing button %d (down+up)", button_id);
+  event_put(&down);
+  event_put(&up);
+#else
+  (void)button_id;
+#endif
+}
+
 void touch_handle_gesture(TouchGesture gesture, int16_t x, int16_t y) {
   mutex_lock(s_touch_mutex);
 
@@ -206,10 +234,17 @@ void touch_handle_gesture(TouchGesture gesture, int16_t x, int16_t y) {
     case TouchGesture_Tap:
       PBL_ANALYTICS_ADD(gesture_tap_count, 1);
       prv_put_gesture_event(GestureEvent_Tap, x, y);
+      prv_synthesize_nav_button(BUTTON_ID_SELECT);
       break;
     case TouchGesture_DoubleTap:
       PBL_ANALYTICS_ADD(gesture_double_tap_count, 1);
       prv_put_gesture_event(GestureEvent_DoubleTap, x, y);
+      break;
+    case TouchGesture_SwipeUp:
+      prv_synthesize_nav_button(BUTTON_ID_UP);
+      break;
+    case TouchGesture_SwipeDown:
+      prv_synthesize_nav_button(BUTTON_ID_DOWN);
       break;
     default:
       break;

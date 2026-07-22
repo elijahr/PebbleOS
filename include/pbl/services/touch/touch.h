@@ -16,6 +16,11 @@ typedef enum TouchState {
 typedef enum TouchGesture {
   TouchGesture_Tap,
   TouchGesture_DoubleTap,
+  //! Vertical swipes. The CST816 reports these natively; they are used by the
+  //! touch-to-button navigation shim (CONFIG_TOUCH_NAV_BUTTONS) to scroll
+  //! button-driven menus on devices with a touchscreen but no UP/DOWN buttons.
+  TouchGesture_SwipeUp,
+  TouchGesture_SwipeDown,
 } TouchGesture;
 
 void touch_init(void);
