@@ -40,13 +40,13 @@ CONFIG_I2C=y
 CONFIG_ACCEL_KX023=y
 CONFIG_ACCEL_KX023_SCALE_MG=2000
 # Touch (CST816) driver, board wiring, nonfree blob and Renode model are all in
-# place and the I2C init handshake is verified. Enabling CONFIG_TOUCH here
-# currently regresses the launcher render (boot reaches launcher_main_loop and
-# composites, but the content area stays blank and an unhandled IRQ appears) —
-# root cause not yet isolated. Left off by default so the launcher renders.
-# Re-enable to continue the touch bring-up:
-#   CONFIG_TOUCH=y
-#   CONFIG_TOUCH_CST816=y
+# place and verified end-to-end (tap INT delivered to the firmware GPIOTE). The
+# earlier "launcher content stays blank + unhandled IRQ" regression when touch
+# was enabled was a symptom of the intermittent BLE-vs-unmodeled-RADIO boot
+# crash (see the Bluetooth note above), amplified by touch bringing up more of
+# the UI; it clears now that the BLE stub is selected.
+CONFIG_TOUCH=y
+CONFIG_TOUCH_CST816=y
 
 CONFIG_PWM=y
 
@@ -60,3 +60,13 @@ CONFIG_TEMPERATURE_STUB=y
 
 CONFIG_CPUMODE=y
 CONFIG_CPUMODE_STUB=y
+
+# Bluetooth: the nRF SoC defaults the BT backend to NimBLE, which runs the full
+# BLE controller/link layer directly against the nRF RADIO/AAR/CCM peripherals.
+# Renode does not model those, so on the emulator the Nimble link layer thrashes
+# thousands of unhandled peripheral accesses and, on a fraction of boots (a
+# scheduling-interleaving race), faults into a passert -> core-dump reset. That
+# is the intermittent boot-reboot seen in the harness bootsweep. BLE is not part
+# of board bring-up; connectivity is a separate action item that needs a modeled
+# RADIO. Select the stub backend so bring-up boots deterministically.
+CONFIG_BT_FW_STUB=y
