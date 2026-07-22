@@ -19,7 +19,10 @@
 //               then LCD_LINE_DATA_BYTES of 3bpp pixels, LSB-first.
 //   - CS is a GPIO, active HIGH for 3/4bpp mode.
 //
-// SPIM plumbing is modeled on sharp_ls013b7dh01_nrf5.c.
+// SPIM plumbing and the hardware EXTCOMIN (anti-burn-in VCOM) generator are both
+// modeled on sharp_ls013b7dh01_nrf5.c. EXTCOMIN (P0.06) MUST be toggled
+// continuously or a static DC bias physically damages the memory-LCD, so it is
+// driven fully in hardware (RTC + GPIOTE + PPI) and free-runs after display_init.
 
 #include "drivers/display/display.h"
 
@@ -32,6 +35,9 @@
 #include "util/reverse.h"
 
 #include <hal/nrf_gpio.h>
+#include <hal/nrf_gpiote.h>
+#include <hal/nrf_rtc.h>
+#include <nrfx_gppi.h>
 #include <nrfx_spim.h>
 
 #include "FreeRTOS.h"
@@ -81,6 +87,66 @@ static bool s_updating;
 static bool s_rotated_180;
 static UpdateCompleteCallback s_uccb;
 static SemaphoreHandle_t s_sem;
+
+// EXTCOMIN (VCOM) anti-burn-in generator.
+//
+// The LPM013M126 is a memory-in-pixel LCD: a static DC bias across the liquid
+// crystal PHYSICALLY DAMAGES the panel. The panel must therefore see EXTCOMIN
+// (P0.06) toggled continuously (~1-60 Hz) to invert the common-electrode
+// polarity. This MUST keep running independent of the CPU/RTOS, so — exactly
+// like sharp_ls013b7dh01_nrf5.c — it is generated fully in hardware: an RTC
+// periodic compare drives a GPIOTE task through PPI, with no ISR in the loop.
+// Once armed it free-runs forever, even if the firmware is busy or wedged.
+static void prv_extcomin_init(void) {
+  nrfx_err_t err;
+  const NrfLowPowerPWM *extcomin = &BOARD_CONFIG_DISPLAY.extcomin;
+  uint32_t evt_addr, task_addr;
+  uint8_t ppi_ch[2];
+
+  nrf_gpiote_te_default(extcomin->gpiote, extcomin->gpiote_ch);
+
+  nrf_gpio_pin_write(extcomin->psel, 0);
+  nrf_gpio_cfg_output(extcomin->psel);
+
+  // RTC: CC0 is the period end, CC1 is the pulse end.
+  nrf_rtc_task_trigger(extcomin->rtc, NRF_RTC_TASK_STOP);
+  nrf_rtc_event_clear(extcomin->rtc, nrf_rtc_compare_event_get(0));
+  nrf_rtc_event_clear(extcomin->rtc, nrf_rtc_compare_event_get(1));
+  nrf_rtc_task_trigger(extcomin->rtc, NRF_RTC_TASK_CLEAR);
+  nrf_rtc_prescaler_set(extcomin->rtc, NRF_RTC_FREQ_TO_PRESCALER(32768));
+  nrf_rtc_event_enable(extcomin->rtc, (NRF_RTC_INT_COMPARE0_MASK | NRF_RTC_INT_COMPARE1_MASK));
+  nrf_rtc_cc_set(extcomin->rtc, 0, (32768 * extcomin->period_us) / 1000000 - 1);
+  nrf_rtc_cc_set(extcomin->rtc, 1, (32768 * extcomin->pulse_us) / 1000000 - 1);
+
+  nrf_gpiote_task_configure(extcomin->gpiote, extcomin->gpiote_ch, extcomin->psel,
+                            NRF_GPIOTE_POLARITY_NONE, NRF_GPIOTE_INITIAL_VALUE_LOW);
+  nrf_gpiote_task_enable(extcomin->gpiote, extcomin->gpiote_ch);
+
+  err = nrfx_gppi_channel_alloc(&ppi_ch[0]);
+  PBL_ASSERTN(err == NRFX_SUCCESS);
+
+  err = nrfx_gppi_channel_alloc(&ppi_ch[1]);
+  PBL_ASSERTN(err == NRFX_SUCCESS);
+
+  // Period end (CC0) sets the GPIO and clears the RTC.
+  evt_addr = nrf_rtc_event_address_get(extcomin->rtc, nrf_rtc_compare_event_get(0));
+  task_addr =
+      nrf_gpiote_task_address_get(extcomin->gpiote, nrf_gpiote_set_task_get(extcomin->gpiote_ch));
+  nrfx_gppi_channel_endpoints_setup(ppi_ch[0], evt_addr, task_addr);
+
+  task_addr = nrf_rtc_task_address_get(extcomin->rtc, NRF_RTC_TASK_CLEAR);
+  nrfx_gppi_fork_endpoint_setup(ppi_ch[0], task_addr);
+
+  // Pulse end (CC1) clears the GPIO.
+  evt_addr = nrf_rtc_event_address_get(extcomin->rtc, nrf_rtc_compare_event_get(1));
+  task_addr =
+      nrf_gpiote_task_address_get(extcomin->gpiote, nrf_gpiote_clr_task_get(extcomin->gpiote_ch));
+  nrfx_gppi_channel_endpoints_setup(ppi_ch[1], evt_addr, task_addr);
+
+  nrfx_gppi_channels_enable((1UL << ppi_ch[0]) | (1UL << ppi_ch[1]));
+
+  nrf_rtc_task_trigger(extcomin->rtc, NRF_RTC_TASK_START);
+}
 
 static inline void prv_enable_spim(void) { nrf_spim_enable(BOARD_CONFIG_DISPLAY.spi.p_reg); }
 
@@ -213,6 +279,10 @@ void display_init(void) {
   gpio_output_init(&BOARD_CONFIG_DISPLAY.on_ctrl,
                    (GPIOOType_TypeDef)BOARD_CONFIG_DISPLAY.on_ctrl_otype);
   gpio_output_set(&BOARD_CONFIG_DISPLAY.on_ctrl, true);
+
+  // Start the hardware EXTCOMIN toggle — required to avoid physical DC-bias
+  // damage to the memory-LCD (see prv_extcomin_init).
+  prv_extcomin_init();
 
   s_sem = xSemaphoreCreateBinary();
 }

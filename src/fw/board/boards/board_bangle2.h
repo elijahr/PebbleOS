@@ -82,7 +82,7 @@ extern QSPIFlash * const QSPI_FLASH;
 // LPM013M126 memory-in-pixel LCD on the nRF52840 SPIM3 bus.
 //   SCK  P0.26, MOSI P0.27 (write-only panel, no MISO)
 //   CS   P0.05 (active HIGH for 3/4bpp mode), DISP/enable P0.07 (high at init)
-//   EXTCOMIN P0.06 (anti-burn-in; optional for the Renode MVP, not driven yet)
+//   EXTCOMIN P0.06 (anti-burn-in VCOM; driven in hardware by RTC2+GPIOTE+PPI)
 // Pins per boards/BANGLEJS2.py; encoding per Espruino libs/graphics/lcd_memlcd.c.
 static const BoardConfigSharpDisplay BOARD_CONFIG_DISPLAY = {
   .spi = NRFX_SPIM_INSTANCE(3),
@@ -94,8 +94,9 @@ static const BoardConfigSharpDisplay BOARD_CONFIG_DISPLAY = {
   .on_ctrl = { NRF5_GPIO_RESOURCE_EXISTS, NRF_GPIO_PIN_MAP(0, 7), true },
   .on_ctrl_otype = NRF_GPIO_PIN_S0S1,
 
-  // EXTCOMIN slot kept for hardware-correctness; the MVP driver does not start
-  // the RTC/PPI toggle (Track C reworks the anti-burn-in path).
+  // EXTCOMIN (anti-burn-in VCOM) on P0.06. The display driver arms a free-running
+  // RTC2 -> GPIOTE(ch6) -> PPI toggle at ~120 Hz (period_us) with a short pulse;
+  // a static level here would physically damage the panel.
   .extcomin = {
     .rtc = NRF_RTC2,
     .gpiote = NRF_GPIOTE,
