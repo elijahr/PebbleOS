@@ -81,8 +81,23 @@ static const BacklightPwmConfig BACKLIGHT_PWM = {
   .max_duty_cycle_percent = 67,
 };
 
-extern QSPIPort * const QSPI;
-extern QSPIFlash * const QSPI_FLASH;
+// External 8 MB SPI NOR on the nRF52840 SPIM2 master. Pins are the real
+// Bangle.js 2 flash bus (Espruino boards/BANGLEJS2.py): CS D14=P0.14,
+// SCK D16=P0.16, MOSI/IO0 D15=P0.15, MISO/IO1 D13=P0.13. CS is a plain GPIO the
+// spi_nor driver toggles per command (active low). 8 MHz matches the QSPI-era
+// clock and the Espruino "too fast at 8 MHz" note applies to the panel bus, not
+// this one. See drivers/flash/spi_nor.
+static const BoardConfigFlashSPI BOARD_CONFIG_FLASH = {
+  .spi = NRFX_SPIM_INSTANCE(2),
+
+  .clk  = { NRF5_GPIO_RESOURCE_EXISTS, NRF_GPIO_PIN_MAP(0, 16), true },
+  .mosi = { NRF5_GPIO_RESOURCE_EXISTS, NRF_GPIO_PIN_MAP(0, 15), true },
+  .miso = { NRF5_GPIO_RESOURCE_EXISTS, NRF_GPIO_PIN_MAP(0, 13), true },
+  // CS active low.
+  .cs   = { NRF5_GPIO_RESOURCE_EXISTS, NRF_GPIO_PIN_MAP(0, 14), false },
+
+  .clk_freq_hz = 8000000UL,
+};
 
 // LPM013M126 memory-in-pixel LCD on the nRF52840 SPIM3 bus.
 //   SCK  P0.26, MOSI P0.27 (write-only panel, no MISO)

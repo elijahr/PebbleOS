@@ -2,14 +2,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "board/board.h"
-#include "drivers/flash/qspi_flash_definitions.h"
 #include "drivers/gpio.h"
 #include "drivers/i2c.h"
 #include "drivers/i2c/definitions.h"
 #include "drivers/i2c/nrf5.h"
 #include "drivers/imu/kx023/kx023.h"
 #include "drivers/pwm.h"
-#include "drivers/qspi_definitions.h"
 #include "drivers/rtc.h"
 #include "drivers/touch/cst816/touch_sensor_definitions.h"
 #include "drivers/uart/nrf5.h"
@@ -20,45 +18,15 @@
 #include <hal/nrf_gpio.h>
 #include <nrfx_gpiote.h>
 #include <nrfx_pwm.h>
-#include <nrfx_qspi.h>
 #include <nrfx_spim.h>
 #include <nrfx_twim.h>
 
-// External flash (8 MB SPI NOR). The real Bangle.js 2 flash bus is software-SPI
-// on GPIO (CS P0.14, SCK P0.16, IO0 P0.15, IO1 P0.13); Track A assigns the
-// nRF52840 QSPI peripheral to those pins and picks the concrete opcode table.
-// Present here so the flash driver links for the PRF skeleton.
-static QSPIPortState s_qspi_port_state;
-static QSPIPort QSPI_PORT = {
-    .state = &s_qspi_port_state,
-    .clk_freq_hz = 8000000UL,
-    .cs_gpio = NRF_GPIO_PIN_MAP(0, 14),
-    .clk_gpio = NRF_GPIO_PIN_MAP(0, 16),
-    .data_gpio =
-        {
-            NRF_GPIO_PIN_MAP(0, 15),  // IO0 / MOSI
-            NRF_GPIO_PIN_MAP(0, 13),  // IO1 / MISO
-            // Bangle.js 2 wires the flash in dual-IO only (IO0/IO1). Leave IO2/IO3
-            // disconnected: on silicon P0.20/P0.21 are NOT flash pins, and P0.21 is
-            // the heart-rate-sensor power enable (D21 in Espruino boards/BANGLEJS2.py).
-            // Driving them as QSPI PSEL would seize P0.21 and power the HRM on
-            // permanently. NRF_QSPI_PIN_NOT_CONNECTED (0xFF) -> PSEL 0xFFFFFFFF.
-            NRF_QSPI_PIN_NOT_CONNECTED,  // IO2 (WP) - not wired on Bangle
-            NRF_QSPI_PIN_NOT_CONNECTED,  // IO3 (HOLD) - not wired; P0.21 = HRM power
-        },
-};
-QSPIPort *const QSPI = &QSPI_PORT;
-
-static QSPIFlashState s_qspi_flash_state;
-static QSPIFlash QSPI_FLASH_DEVICE = {
-    .state = &s_qspi_flash_state,
-    .qspi = &QSPI_PORT,
-    // Only IO0 (P0.15) and IO1 (P0.13) are wired on the Bangle flash bus, so
-    // reads use dual-IO and writes stay single-line (page program).
-    .read_mode = QSPI_FLASH_READ_READ2IO,
-    .write_mode = QSPI_FLASH_WRITE_PP,
-};
-QSPIFlash *const QSPI_FLASH = &QSPI_FLASH_DEVICE;
+// External flash (8 MB SPI NOR) is driven over the nRF52840 SPIM2 master with a
+// GPIO chip-select on the real Bangle.js 2 flash pins (CS P0.14, SCK P0.16,
+// MOSI/IO0 P0.15, MISO/IO1 P0.13). The bus config lives in BOARD_CONFIG_FLASH
+// (board_bangle2.h); the driver is drivers/flash/spi_nor. SPIM2 runs in blocking
+// mode, so its IRQ never fires, but map the vector defensively.
+IRQ_MAP_NRFX(SPI2_SPIM2_SPIS2, nrfx_spim_2_irq_handler);
 
 // Debug UART on unused GPIOs (placeholder pins; Bangle.js 2 has no dedicated
 // debug UART routed in the Espruino source).
