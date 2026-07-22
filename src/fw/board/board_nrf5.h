@@ -203,6 +203,21 @@ typedef struct {
   const NrfLowPowerPWM extcomin;
 } BoardConfigSharpDisplay;
 
+// External SPI-NOR flash driven over a dedicated nRF52840 SPIM (EasyDMA) master.
+// SCK/MOSI/MISO are owned by the SPIM peripheral; CS is a plain GPIO the driver
+// toggles per command (active low), exactly like the display bus manages its own
+// CS. Used by drivers/flash/spi_nor.
+typedef struct {
+  nrfx_spim_t spi;
+
+  const OutputConfig clk;
+  const OutputConfig mosi;
+  const OutputConfig miso;
+  const OutputConfig cs;
+
+  uint32_t clk_freq_hz;
+} BoardConfigFlashSPI;
+
 typedef const struct UARTDevice UARTDevice;
 typedef const struct I2CBus I2CBus;
 typedef const struct I2CSlavePort I2CSlavePort;

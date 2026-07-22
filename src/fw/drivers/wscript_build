@@ -295,7 +295,10 @@ if bld.env.CONFIG_QEMU:
 if bld.env.CONFIG_PWM:
     bld.recurse('pwm')
 
-if bld.env.CONFIG_SOC_NRF52:
+# The nrf5 QSPI backend references the board's QSPI_FLASH device; boards that
+# drive their flash over SPIM (CONFIG_FLASH_SPI_NOR) provide no such device, so
+# skip building it there.
+if bld.env.CONFIG_SOC_NRF52 and not bld.env.CONFIG_FLASH_SPI_NOR:
     bld.objects(
         name='driver_qspi',
         source=[

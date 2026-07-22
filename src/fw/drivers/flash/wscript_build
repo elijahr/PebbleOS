@@ -27,6 +27,9 @@ elif bld.env.CONFIG_FLASH_GD25Q256E:
 elif bld.env.CONFIG_FLASH_BANGLE2:
     sources.append('bangle2_flash.c')
     use.append('driver_qspi')
+elif bld.env.CONFIG_FLASH_SPI_NOR:
+    sources.append('spi_nor/spi_nor.c')
+    use.append('hal_nordic')
 bld.objects(
     name='driver_flash',
     source=sources,
