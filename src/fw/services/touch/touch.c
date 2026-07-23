@@ -246,6 +246,9 @@ void touch_handle_gesture(TouchGesture gesture, int16_t x, int16_t y) {
     case TouchGesture_SwipeDown:
       prv_synthesize_nav_button(BUTTON_ID_DOWN);
       break;
+    case TouchGesture_SwipeRight:
+      prv_synthesize_nav_button(BUTTON_ID_BACK);
+      break;
     default:
       break;
   }
