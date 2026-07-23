@@ -15,7 +15,10 @@ config FLASH_SIZE
     default 0x100000
 
 config FLASH_OFFSET
-    default 0x8000
+    # Root Kconfig sources soc/*/Kconfig.defconfig before boards/*/Kconfig.defconfig
+    # and the first satisfied default wins; a board's FLASH_OFFSET override only
+    # takes effect if this SoC default is neutralized for it (add && !BOARD_FOO).
+    default 0x8000 if !BOARD_BANGLE2
 
 # 256 KiB of SRAM, first 256 bytes reserved for the RETAINED region.
 config SRAM_BASE

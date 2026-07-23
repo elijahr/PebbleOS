@@ -5,4 +5,10 @@
 # firmware and is linked in the upper half.
 config FW_FLASH_SIZE
     default 0x80000 if RECOVERY_FW && !MFG
-    default 0x100000
+    default 0xD1000
+
+# The stock Espruino MBR + dormant S140 SoftDevice occupy 0x0-0x26000.
+# PebbleOS runs as a bootloader-hosted DFU application above the SoftDevice.
+# app end = 0x26000 + 0xD1000 = 0xF7000 = the stock bootloader start.
+config FLASH_OFFSET
+    default 0x26000

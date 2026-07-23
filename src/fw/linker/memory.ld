@@ -61,3 +61,12 @@ ASSERT(CONFIG_APP_RAM_4X_SEGMENT_SIZE % 8 == 0,
 /* Basic sanity checks: apps must fit, and the kernel needs at least 64k. */
 ASSERT(PBL_APP_RAM_SIZE > 0, "App RAM is too small!")
 ASSERT(PBL_KERNEL_RAM_SIZE >= 64K, "Kernel RAM is too small!")
+
+/* The bootloader region begins at 0xF7000. The app image must never overrun
+ * it, the MBR-params (0xFE000), or the settings page (0xFF000). A geometry
+ * mistake here would brick the recovery lifeline. Region-derived form: reads
+ * the resolved FLASH region, not the un-prefixed Kconfig names. */
+#if defined(CONFIG_BOARD_BANGLE2)
+ASSERT(ORIGIN(FLASH) + LENGTH(FLASH) <= 0xF7000,
+       "bangle2 app image overruns the bootloader region")
+#endif
