@@ -144,6 +144,14 @@ int main(void) {
   pulse_early_init();
   print_splash_screen();
 
+  // Reload the bootloader-armed HW WDT before the first RTC feed. Closes the
+  // reset -> rtc_init head window. The stock Espruino nRF52 DFU bootloader arms
+  // a ~5 s WDT (CRV = 5 * 32768, RR0-only) and hands it off still running; this
+  // is NOT PebbleOS's own watchdog_init() (nrf5.c: 8 s, RR0), which is never
+  // called here. Boot-hang detection is intentionally deferred to the app
+  // task-watchdog after handover (design tradeoff): unconditional feeding during
+  // startup masks an early-boot task hang until handover.
+  watchdog_feed();
   rtc_init();
 
 #ifdef CONFIG_RECOVERY_FW

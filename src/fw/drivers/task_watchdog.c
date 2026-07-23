@@ -56,6 +56,15 @@ static uint8_t s_ticks_since_successful_feed = 0;
 // Pause state: number of ticks remaining in pause
 static uint32_t s_pause_ticks_remaining = 0;
 
+// True once all masked tasks have checked in and the gated path takes over the
+// HW WDT reload (task_watchdog.c:362). Until then task_watchdog_startup_feed()
+// reloads the HW WDT unconditionally. The pause branch also feeds the HW WDT but
+// does NOT set this flag.
+// Only accessed from rtc_irq_handler (single ISR context), so no volatile/atomic
+// is needed. A future caller adding startup_feed/handover from another context
+// must reconsider the memory ordering here.
+static bool s_hw_watchdog_taken_over = false;
+
 // We use this interrupt vector for our lower priority interrupts
 #ifdef CONFIG_SOC_NRF52
 #define WATCHDOG_FREERTOS_IRQn        QDEC_IRQn
@@ -257,11 +266,22 @@ void task_watchdog_init(void) {
 
   // create the app throttling timer
   s_throttle_timer_id = new_timer_create();
+
+  // Reset the startup-handover flag so the ungated startup feed is active again
+  // from reset. On real hardware init runs once at boot with the flag already
+  // false, so this is a no-op there; it restores per-test isolation on host.
+  s_hw_watchdog_taken_over = false;
 }
 
 void task_watchdog_feed(void) {
   s_ticks_since_successful_feed++;
   prv_task_watchdog_feed();
+}
+
+void task_watchdog_startup_feed(void) {
+  if (!s_hw_watchdog_taken_over) {
+    watchdog_feed();
+  }
 }
 
 static void task_watchdog_disable_interrupt() {
@@ -349,6 +369,7 @@ static void prv_task_watchdog_feed(void) {
 
     s_watchdog_bits = 0;
     watchdog_feed();
+    s_hw_watchdog_taken_over = true;  // Gated path now owns the HW WDT.
     s_ticks_since_successful_feed = 0;
 
     if (s_last_warning_message_tick_time) {
