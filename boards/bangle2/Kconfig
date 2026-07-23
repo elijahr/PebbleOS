@@ -4,3 +4,12 @@
 config BOARD_BANGLE2
     bool
     default y
+
+config BANGLE2_TEST_NO_VTOR
+    bool "TEST ONLY: skip the app self-VTOR set (Renode honesty RED test)"
+    default n
+    help
+      When set, main() does NOT set SCB->VTOR. This produces a dedicated
+      RED-test ELF that MUST fail the Renode self-VTOR honesty check (it
+      boots via the MBR stub but never repoints VTOR). Never enable in a
+      shipping build.

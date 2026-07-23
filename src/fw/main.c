@@ -127,8 +127,10 @@ static void print_splash_screen(void)
 int main(void) {
   soc_early_init();
 
+#ifndef CONFIG_BANGLE2_TEST_NO_VTOR
   extern void * __ISR_VECTOR_TABLE__;  // Defined in linker script
   SCB->VTOR = (uint32_t)&__ISR_VECTOR_TABLE__;
+#endif
 
   NVIC_SetPriorityGrouping(3); // 4 bits for group priority; 0 bits for subpriority
 
