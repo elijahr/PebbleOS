@@ -36,6 +36,7 @@ PBL_LOG_MODULE_DEFINE(driver_touch_cst816, CONFIG_DRIVER_TOUCH_LOG_LEVEL);
 #define CST816_GESTURE_ID             0x01
 #define CST816_GESTURE_NONE           0x00
 #define CST816_GESTURE_RIGHT          0x01
+// LEFT is intentionally unmapped: only swipe-right is wired (to BACK) below.
 #define CST816_GESTURE_LEFT           0x02
 #define CST816_GESTURE_DOWN           0x03
 #define CST816_GESTURE_UP             0x04
