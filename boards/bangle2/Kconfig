@@ -13,3 +13,14 @@ config BANGLE2_TEST_NO_VTOR
       RED-test ELF that MUST fail the Renode self-VTOR honesty check (it
       boots via the MBR stub but never repoints VTOR). Never enable in a
       shipping build.
+
+config BANGLE2_TEST_NO_WDT_STARTUP_FEED
+    bool "TEST ONLY: skip the startup HW-watchdog feeds (Renode honesty RED test)"
+    default n
+    help
+      When set, main() does NOT issue the early watchdog_feed() before
+      rtc_init(), and the RTC COMPARE_1 interrupt does NOT call
+      task_watchdog_startup_feed(). This produces a dedicated RED-test ELF
+      that MUST fail the Renode early-RR0-feed honesty check: with the
+      startup feeds removed, no CPU write reaches NRF_WDT->RR[0] in the
+      early boot window. Never enable in a shipping build.

@@ -151,7 +151,9 @@ int main(void) {
   // called here. Boot-hang detection is intentionally deferred to the app
   // task-watchdog after handover (design tradeoff): unconditional feeding during
   // startup masks an early-boot task hang until handover.
+#ifndef CONFIG_BANGLE2_TEST_NO_WDT_STARTUP_FEED
   watchdog_feed();
+#endif
   rtc_init();
 
 #ifdef CONFIG_RECOVERY_FW

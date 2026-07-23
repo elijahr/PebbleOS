@@ -437,7 +437,9 @@ void rtc_irq_handler(void) {
   }
 
   if (nrf_rtc_event_check(BOARD_RTC_INST, NRF_RTC_EVENT_COMPARE_1)) {
+#ifndef CONFIG_BANGLE2_TEST_NO_WDT_STARTUP_FEED
     task_watchdog_startup_feed();  // Ungated HW WDT reload until handover.
+#endif
     task_watchdog_feed();
 
     nrf_rtc_event_clear(BOARD_RTC_INST, NRF_RTC_EVENT_COMPARE_1);
