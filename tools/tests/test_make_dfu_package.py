@@ -36,6 +36,10 @@ import tempfile
 import unittest
 import zipfile
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from intelhex import IntelHex
 
 # Allow running from anywhere (mirrors tools/tests/test_hdlc.py).
@@ -234,6 +238,82 @@ class TestImageSelfConsistency(unittest.TestCase):
         )
         self.assertEqual(
             cm.exception.computed, hashlib.sha256(OTHER_APP_BIN).digest()[::-1]
+        )
+
+
+class TestSignature(unittest.TestCase):
+    """The init packet must carry a structurally real ECDSA-P256-SHA256
+    signature (Nordic/nrfutil scheme), because the Espruino bootloader rejects
+    an all-zero placeholder at init-packet validation."""
+
+    def _default_signed(self):
+        pkt = mdp.dfu_cc_pb2.Packet()
+        pkt.ParseFromString(mdp.build_init_packet(SAMPLE_APP_BIN))
+        return pkt.signed_command
+
+    def test_default_signature_is_real_64_byte_nonzero(self):
+        signed = self._default_signed()
+        self.assertEqual(signed.signature_type, mdp.dfu_cc_pb2.ECDSA_P256_SHA256)
+        self.assertEqual(len(signed.signature), 64)
+        self.assertNotEqual(signed.signature, b"\x00" * 64)
+
+    def test_signature_roundtrip_verifies_over_init_command(self):
+        # The signature is a valid ECDSA-P256-SHA256 signature over the serialized
+        # InitCommand (nrfutil signs the `init` sub-message, not the Command).
+        signed = self._default_signed()
+        # Returns None (no raise) when the signature is structurally valid.
+        self.assertIsNone(
+            mdp.verify_init_signature(
+                signed.command.init.SerializeToString(), signed.signature
+            )
+        )
+
+    def test_signature_is_over_init_command_not_command(self):
+        # Fidelity to nrfutil: verifying over the *Command* bytes must FAIL,
+        # proving the tool signs the InitCommand and not the Command wrapper.
+        signed = self._default_signed()
+        with self.assertRaises(InvalidSignature):
+            mdp.verify_init_signature(
+                signed.command.SerializeToString(), signed.signature
+            )
+
+    def test_signature_byte_order_is_nordic_little_endian(self):
+        # The 64-byte layout is r||s each byte-reversed to little-endian. Decoding
+        # it as big-endian (r||s straight) must FAIL to verify, proving the
+        # nrfutil reversal (signature[31::-1] + signature[63:31:-1]) is applied.
+        signed = self._default_signed()
+        init_bytes = signed.command.init.SerializeToString()
+        sig = signed.signature
+        r_be = int.from_bytes(sig[:32], "big")
+        s_be = int.from_bytes(sig[32:], "big")
+        pub = mdp._throwaway_private_key().public_key()
+        with self.assertRaises(InvalidSignature):
+            pub.verify(
+                encode_dss_signature(r_be, s_be),
+                init_bytes,
+                ec.ECDSA(hashes.SHA256()),
+            )
+
+    def test_verify_own_signature_rejects_zeroed_signature(self):
+        # verify_own_signature bites: a package whose signature is zeroed out is
+        # rejected (this is exactly what the bootloader rejected on real hardware).
+        pkt = mdp.dfu_cc_pb2.Packet()
+        pkt.ParseFromString(mdp.build_init_packet(SAMPLE_APP_BIN))
+        pkt.signed_command.signature = b"\x00" * 64
+        with self.assertRaises(mdp.SignatureInvalidError):
+            mdp.verify_own_signature(pkt.SerializeToString())
+
+    def test_verify_own_signature_accepts_real_package(self):
+        self.assertIsNone(
+            mdp.verify_own_signature(mdp.build_init_packet(SAMPLE_APP_BIN))
+        )
+
+    def test_signing_is_deterministic(self):
+        # RFC 6979 deterministic signing + fixed throwaway key => byte-stable
+        # output, so the package stays reproducible across rebuilds.
+        self.assertEqual(
+            mdp.build_init_packet(SAMPLE_APP_BIN),
+            mdp.build_init_packet(SAMPLE_APP_BIN),
         )
 
 

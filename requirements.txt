@@ -22,6 +22,9 @@ ninja
 nanopb
 grpcio-tools
 
+# Nordic Secure DFU init-packet signing (tools/make_dfu_package.py)
+cryptography
+
 # Device communication / debugging
 pyserial
 pexpect

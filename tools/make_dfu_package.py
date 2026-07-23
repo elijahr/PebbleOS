@@ -27,12 +27,19 @@ against the golden before the package is written, so a mis-built package
 (wrong hardware, wrong SoftDevice requirement, wrong image type) is rejected
 here rather than by the device.
 
-Safety: the Espruino bootloader has signature verification disabled, so the
-signature bytes are an inert valid-length (64-byte, ECDSA P-256) placeholder.
-A structurally wrong or hash-mismatched package is REJECTED by the bootloader
-(and by this tool's own checks); it cannot brick a device via this path (this
-rests on the stock bootloader's own reject-and-recover behavior, which the
-first hardware flash will confirm).
+Init-packet signature: the packet is signed the way nrfutil signs it -- ECDSA
+over NIST P-256 with SHA-256 over the serialized InitCommand, r||s stored with
+each 32-byte half byte-reversed (see the signing section below for the exact
+scheme and source references). The Espruino bootloader has signature
+verification disabled, so it requires a structurally valid signature of this
+length but does not check it against any public key; the signing key here is a
+public, security-irrelevant throwaway. The first hardware flash confirmed that
+an all-zero placeholder signature is REJECTED at init-packet validation, so a
+real, structurally valid signature is required.
+
+Safety: a structurally wrong or hash-mismatched package is REJECTED by the
+bootloader (and by this tool's own checks); it cannot brick a device via this
+path (this rests on the stock bootloader's own reject-and-recover behavior).
 
 Flashing: load the produced .zip via the Bangle.js App Loader
 "Firmware Update" (Advanced) flow. The first hardware flash is the final
@@ -52,6 +59,13 @@ import sys
 import zipfile
 from pathlib import Path
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import (
+    decode_dss_signature,
+    encode_dss_signature,
+)
 from intelhex import IntelHex
 
 # The vendored, generated init-packet decoder lives next to this tool under
@@ -78,11 +92,78 @@ HW_VERSION = 52
 FW_VERSION = 255
 SD_REQ = (0xA9, 0xB6, 0xAE)
 
-# 64-byte ECDSA P-256 signature length, matched to the golden. Verification is
-# disabled in the Espruino bootloader, so the bytes are an inert placeholder;
-# only the structural length matters.
+# 64-byte ECDSA P-256 signature length, matched to the golden.
 SIGNATURE_LEN = 64
-PLACEHOLDER_SIGNATURE = b"\x00" * SIGNATURE_LEN
+
+# --- Init-packet signing (Nordic Secure DFU / nrfutil scheme) ---------------
+# nrfutil signs the init packet as follows (pc-nrfutil 6.1.7):
+#   * The signed data is the serialized *InitCommand* -- the `init` sub-message,
+#     NOT the enclosing Command. See init_packet_pb.get_init_command_bytes()
+#     -> `return self.init_command.SerializeToString()`, invoked at
+#     package.py:482 `signer.sign(init_packet.get_init_command_bytes())`.
+#   * ECDSA over NIST P-256 (secp256r1), SHA-256 (signing.py sign()).
+#   * The 64-byte signature is r||s, each 32-byte half byte-reversed to
+#     little-endian: signing.py `return signature[31::-1] + signature[63:31:-1]`
+#     over ecdsa's big-endian sigencode_string output.
+#
+# The Espruino bootloader requires a structurally valid signature of this length
+# but does not verify it against any key (the stock 2v27 golden is signed with a
+# key that is NOT nrfutil's default, and the first hardware flash rejected an
+# all-zero signature). The key below is therefore a public, security-irrelevant
+# throwaway. It is derived from a fixed scalar (no vendored PEM secret) and used
+# with RFC 6979 deterministic signing, so the produced package is byte-stable.
+_P256_ORDER = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+_THROWAWAY_SCALAR = (
+    int.from_bytes(
+        hashlib.sha256(b"pebbleos-banglejs2-dfu-throwaway-signing-key").digest(),
+        "big",
+    )
+    % (_P256_ORDER - 1)
+    + 1
+)
+
+
+def _throwaway_private_key():
+    """Return the fixed, security-irrelevant P-256 signing key."""
+    return ec.derive_private_key(_THROWAWAY_SCALAR, ec.SECP256R1())
+
+
+def _nordic_encode_signature(r, s):
+    """Encode ECDSA (r, s) the way nrfutil does: r||s, each 32 bytes little-endian
+    (nrfutil signing.py: `signature[31::-1] + signature[63:31:-1]` over the
+    big-endian r||s produced by sigencode_string)."""
+    return r.to_bytes(32, "little") + s.to_bytes(32, "little")
+
+
+def _nordic_decode_signature(signature):
+    """Inverse of _nordic_encode_signature: recover (r, s) from Nordic's 64-byte
+    little-endian r||s layout."""
+    return int.from_bytes(signature[:32], "little"), int.from_bytes(
+        signature[32:], "little"
+    )
+
+
+def sign_init_command(init_command_bytes, private_key=None):
+    """Return the 64-byte Nordic-format ECDSA-P256-SHA256 signature over the
+    serialized InitCommand bytes (the `init` sub-message), matching nrfutil."""
+    key = _throwaway_private_key() if private_key is None else private_key
+    der = key.sign(
+        init_command_bytes, ec.ECDSA(hashes.SHA256(), deterministic_signing=True)
+    )
+    r, s = decode_dss_signature(der)
+    return _nordic_encode_signature(r, s)
+
+
+def verify_init_signature(init_command_bytes, signature, public_key=None):
+    """Raise InvalidSignature if `signature` (Nordic 64-byte layout) is not a
+    valid ECDSA-P256-SHA256 signature over init_command_bytes. Proves a generated
+    signature is a structurally real ECDSA signature, not zeros or garbage."""
+    key = _throwaway_private_key().public_key() if public_key is None else public_key
+    r, s = _nordic_decode_signature(signature)
+    key.verify(
+        encode_dss_signature(r, s), init_command_bytes, ec.ECDSA(hashes.SHA256())
+    )
+
 
 # Package member names (app-only Secure DFU).
 BIN_NAME = "pebbleos_banglejs2_app.bin"
@@ -137,6 +218,11 @@ class FieldMismatchError(DfuPackageError):
             for name, (gen, gold) in sorted(mismatches.items())
         )
         super().__init__(f"init-packet field mismatch: {detail}")
+
+
+class SignatureInvalidError(DfuPackageError):
+    """The init packet's signature is not a valid ECDSA-P256-SHA256 signature
+    over its own InitCommand (round-trip check failed)."""
 
 
 class HashMismatchError(DfuPackageError):
@@ -196,7 +282,6 @@ def _assemble_dat(
     packet = dfu_cc_pb2.Packet()
     signed = packet.signed_command
     signed.signature_type = dfu_cc_pb2.ECDSA_P256_SHA256
-    signed.signature = PLACEHOLDER_SIGNATURE if signature is None else signature
 
     command = signed.command
     command.op_code = dfu_cc_pb2.INIT
@@ -215,6 +300,13 @@ def _assemble_dat(
     boot = init.boot_validation.add()
     boot.type = dfu_cc_pb2.VALIDATE_GENERATED_CRC
     boot.bytes = b""
+
+    # nrfutil signs the serialized InitCommand (the `init` sub-message). When a
+    # signature is supplied (e.g. the golden's, for byte-for-byte reproduction)
+    # it is used verbatim; otherwise sign with the throwaway key.
+    if signature is None:
+        signature = sign_init_command(init.SerializeToString())
+    signed.signature = signature
 
     return packet.SerializeToString()
 
@@ -291,6 +383,27 @@ def verify_image_hash(dat_bytes, app_bin):
         raise HashMismatchError(embedded, computed)
 
 
+def verify_own_signature(dat_bytes):
+    """Raise SignatureInvalidError unless the init packet carries a structurally
+    real ECDSA-P256-SHA256 signature (throwaway key) over its own InitCommand.
+    Round-trips the signature the tool just produced, proving it is not zeros or
+    garbage."""
+    packet = dfu_cc_pb2.Packet()
+    packet.ParseFromString(dat_bytes)
+    signed = packet.signed_command
+    signature = signed.signature
+    if len(signature) != SIGNATURE_LEN or signature == b"\x00" * SIGNATURE_LEN:
+        raise SignatureInvalidError(
+            "init-packet signature is missing, wrong length, or all zero"
+        )
+    try:
+        verify_init_signature(signed.command.init.SerializeToString(), signature)
+    except InvalidSignature as exc:
+        raise SignatureInvalidError(
+            "init-packet signature failed ECDSA-P256-SHA256 round-trip verification"
+        ) from exc
+
+
 def build_package(hex_path, out_zip, golden_dat=DEFAULT_GOLDEN_DAT):
     """Build an app-only DFU .zip from hex_path and verify it against the golden.
 
@@ -303,9 +416,11 @@ def build_package(hex_path, out_zip, golden_dat=DEFAULT_GOLDEN_DAT):
 
     golden_init = decode_init_packet(Path(golden_dat).read_bytes())
     generated_init = decode_init_packet(dat_bytes)
-    # The package must match the golden's enumerated fields and its own image.
+    # The package must match the golden's enumerated fields and its own image,
+    # and carry a structurally real signature (the bootloader rejects zeros).
     assert_fields_equal(generated_init, golden_init)
     verify_image_hash(dat_bytes, app_bin)
+    verify_own_signature(dat_bytes)
 
     with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(BIN_NAME, app_bin)
