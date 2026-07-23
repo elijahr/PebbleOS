@@ -14,6 +14,10 @@ with the vendored dfu-cc schema (tools/dfu/dfu_cc_pb2.py) so any user can rebuil
 it reproducibly with only the PebbleOS venv (protobuf + intelhex), no install of
 the abandoned pc-nrfutil toolchain.
 
+Note: if tools/dfu/dfu_cc_pb2.py is ever regenerated with protoc, re-add its
+SPDX header (protoc drops it) AND run `ruff format` on it (protoc output is not
+ruff-format-clean), or the CI compliance workflow will fail.
+
 Structural fidelity is proven, not assumed: fed the stock golden's own
 image-specific values, this tool's protobuf assembly reproduces the 146-byte
 golden init packet (tools/dfu/golden/espruino_2v27_banglejs2_app.dat)
@@ -27,8 +31,8 @@ Safety: the Espruino bootloader has signature verification disabled, so the
 signature bytes are an inert valid-length (64-byte, ECDSA P-256) placeholder.
 A structurally wrong or hash-mismatched package is REJECTED by the bootloader
 (and by this tool's own checks); it cannot brick a device via this path (this
-rests on the stock bootloader's own reject-and-recover behavior, confirmed by
-the first hardware flash).
+rests on the stock bootloader's own reject-and-recover behavior, which the
+first hardware flash will confirm).
 
 Flashing: load the produced .zip via the Bangle.js App Loader
 "Firmware Update" (Advanced) flow. The first hardware flash is the final
