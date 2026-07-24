@@ -212,11 +212,32 @@ Then long-press the button at boot for the recovery menu and select
 
 Restore image sources, in order of preference:
 
-1. The step-1 SWD dumps (`bangle2_internal_backup.bin` +
-   `bangle2_uicr_backup.bin`) — the ground truth for this unit.
-2. The staged full restore hex (MBR + SoftDevice + bootloader + Espruino
-   2v25 app + UICR; contents verified complete):
-   `~/.local/spellbook/docs/Users-eek-Development-PebbleOS/restore/espruino_2v25_banglejs2_FULL_restore.hex`
+1. **Your own step-1 SWD dumps.** Use `bangle2_internal_backup.bin` and
+   `bangle2_uicr_backup.bin` from step 1 above. This is the ground truth
+   for your unit. Restore from these dumps for a byte-exact result.
+2. **A generic stock Espruino image.** Use this only if you have no
+   step-1 dump for this unit, for example on a first restore of a watch
+   you did not dump yourself. Get the image one of two ways:
+
+   - Download it from Gordon Williams' Bangle.js 2 port repo:
+     [gfwilliams/pebble-banglejs2](https://github.com/gfwilliams/pebble-banglejs2).
+     Use the file `banglejs/espruino_2v25_banglejs2.hex`. This file is a
+     complete image: MBR, SoftDevice, bootloader, and Espruino app.
+   - Or build the image yourself from Espruino source:
+
+     ```sh
+     make BOARD=BANGLEJS2 RELEASE=1
+     ```
+
+     This command merges the SoftDevice, bootloader, and app into one
+     hex file.
+
+   Save the image next to your other build artifacts as
+   `espruino_2v25_banglejs2.hex`. The restore command above uses this
+   filename.
+
+   (A local copy of this file may already be staged from earlier
+   development work. Either source above reproduces it.)
 
 Cable-free restore is gone by design. Every restore needs the SWD rig.
 
