@@ -151,9 +151,14 @@ int main(void) {
   // running, so on a warm boot these writes hit an already-running WDT with
   // identical config: the config stores are ignored and TASKS_START on a
   // running WDT does nothing — a benign no-op. Do not "fix" the double-arm.
-  // The WDT counts on LFCLK; if LFCLK is not yet running here, counting
-  // begins when rtc_init starts LFCLK — protection from that point on.
+  // The WDT counts on LFCLK; per the nRF52840 PS the started WDT forces the
+  // 32 kHz LFRC on, so counting begins at arm (even before board_early_init
+  // starts the XTAL LFCLK). The RTC COMPARE_1 startup-feed ISR (~500 ms,
+  // 16x margin under the 8 s timeout) keeps it fed through slow-but-alive
+  // init until task-watchdog handover.
 #if defined(CONFIG_WATCHDOG_SELF_ARM) && !defined(CONFIG_BANGLE2_TEST_NO_WDT_ARM)
+  // watchdog_init() leaves WDT CONFIG at reset default (run-while-sleep,
+  // pause-on-debug-halt) — intended.
   watchdog_init();
   watchdog_start();
 #endif
