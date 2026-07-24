@@ -145,13 +145,25 @@ int main(void) {
   pulse_early_init();
   print_splash_screen();
 
-  // Reload the bootloader-armed HW WDT before the first RTC feed. Closes the
-  // reset -> rtc_init head window. The stock Espruino nRF52 DFU bootloader arms
-  // a ~5 s WDT (CRV = 5 * 32768, RR0-only) and hands it off still running; this
-  // is NOT PebbleOS's own watchdog_init() (nrf5.c: 8 s, RR0), which is never
-  // called here. Boot-hang detection is intentionally deferred to the app
-  // task-watchdog after handover (design tradeoff): unconditional feeding during
-  // startup masks an early-boot task hang until handover.
+  // Bare-metal at 0x0: no bootloader armed a WDT. Arm our own (nrf5.c: 8 s,
+  // RR0) before rtc_init so the boot window is covered from here on. The
+  // nRF52840 WDT survives a soft reset and locks its config registers while
+  // running, so on a warm boot these writes hit an already-running WDT with
+  // identical config: the config stores are ignored and TASKS_START on a
+  // running WDT does nothing — a benign no-op. Do not "fix" the double-arm.
+  // The WDT counts on LFCLK; if LFCLK is not yet running here, counting
+  // begins when rtc_init starts LFCLK — protection from that point on.
+#ifdef CONFIG_WATCHDOG_SELF_ARM
+  watchdog_init();
+  watchdog_start();
+#endif
+  // First feed of OUR just-armed WDT (redundant right after arming, but
+  // harmless, and it keeps the RED-test observable). After self-arm the WDT
+  // runs at 8 s; the ungated RTC COMPARE_1 startup feeds (rtc/nrf5.c,
+  // task_watchdog_startup_feed) cover the window between arm and the
+  // task-watchdog handover (task_watchdog.c). Slow init paths (flash scrub,
+  // PFS check) can legitimately exceed 8 s; the startup feed keeps them
+  // alive while a truly wedged CPU (no RTC ISR, no feed) still resets.
 #ifndef CONFIG_BANGLE2_TEST_NO_WDT_STARTUP_FEED
   watchdog_feed();
 #endif

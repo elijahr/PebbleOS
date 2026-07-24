@@ -15,3 +15,11 @@ config BANGLE2_TEST_NO_WDT_STARTUP_FEED
       that MUST fail the Renode early-RR0-feed honesty check: with the
       startup feeds removed, no CPU write reaches NRF_WDT->RR[0] in the
       early boot window. Never enable in a shipping build.
+
+config WATCHDOG_SELF_ARM
+    bool
+    default y if BOARD_BANGLE2
+    help
+      Bare-metal full-flash boards have no bootloader to arm the hardware
+      watchdog. When set, main() arms the driver's own WDT (nrf5.c: 8 s,
+      RR0) early in boot, immediately before rtc_init.
