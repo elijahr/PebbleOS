@@ -127,10 +127,11 @@ static void print_splash_screen(void)
 int main(void) {
   soc_early_init();
 
-#ifndef CONFIG_BANGLE2_TEST_NO_VTOR
+  // At the full-flash 0x0 layout this stores 0x0 into a register whose reset
+  // value is already 0 — a harmless no-op. Kept so the code stays identical
+  // across boards and stays correct if the image ever moves again.
   extern void * __ISR_VECTOR_TABLE__;  // Defined in linker script
   SCB->VTOR = (uint32_t)&__ISR_VECTOR_TABLE__;
-#endif
 
   NVIC_SetPriorityGrouping(3); // 4 bits for group priority; 0 bits for subpriority
 
