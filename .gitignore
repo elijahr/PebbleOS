@@ -66,6 +66,3 @@ artifacts/
 .claude/settings.local.json
 .envrc
 .direnv
-
-# bangle2 DFU packaging output (tools/make_dfu_package.py)
-*_app_dfu.zip
