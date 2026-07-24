@@ -153,7 +153,7 @@ int main(void) {
   // running WDT does nothing — a benign no-op. Do not "fix" the double-arm.
   // The WDT counts on LFCLK; if LFCLK is not yet running here, counting
   // begins when rtc_init starts LFCLK — protection from that point on.
-#ifdef CONFIG_WATCHDOG_SELF_ARM
+#if defined(CONFIG_WATCHDOG_SELF_ARM) && !defined(CONFIG_BANGLE2_TEST_NO_WDT_ARM)
   watchdog_init();
   watchdog_start();
 #endif

@@ -23,3 +23,13 @@ config WATCHDOG_SELF_ARM
       Bare-metal full-flash boards have no bootloader to arm the hardware
       watchdog. When set, main() arms the driver's own WDT (nrf5.c: 8 s,
       RR0) early in boot, immediately before rtc_init.
+
+config BANGLE2_TEST_NO_WDT_ARM
+    bool "TEST ONLY: skip the boot-time WDT self-arm (Renode honesty RED test)"
+    default n
+    help
+      When set, main() does NOT call watchdog_init()/watchdog_start(), so
+      the hardware watchdog is never armed. This produces a dedicated
+      RED-test ELF that MUST fail the Renode wdt_arm honesty check: no CPU
+      write reaches NRF_WDT->TASKS_START and RUNSTATUS stays 0 after boot.
+      Never enable in a shipping build.
