@@ -7,8 +7,10 @@ config FW_FLASH_SIZE
     default 0x80000 if RECOVERY_FW && !MFG
     default 0xD1000
 
-# The stock Espruino MBR + dormant S140 SoftDevice occupy 0x0-0x26000.
-# PebbleOS runs as a bootloader-hosted DFU application above the SoftDevice.
-# app end = 0x26000 + 0xD1000 = 0xF7000 = the stock bootloader start.
+# Bare-metal full-flash image at 0x0: no MBR, no SoftDevice, no stock
+# bootloader. SWD is the only delivery path. The SoC default 0x8000 is
+# neutralized for this board by the !BOARD_BANGLE2 guard in
+# soc/nrf/Kconfig.defconfig. The image spans 0x0-0xD1000; the 0x2F000
+# (188 KiB) of internal flash above it is free for future growth.
 config FLASH_OFFSET
-    default 0x26000
+    default 0x0

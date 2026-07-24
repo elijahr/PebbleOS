@@ -7,7 +7,8 @@
 //
 // The Bangle.js 2 (SMA-Q3) carries an 8 MB (64 Mbit) dual-IO SPI NOR part on
 // GPIO pins CS P0.14 / SCK P0.16 / IO0 P0.15 / IO1 P0.13. PebbleOS drives it
-// through the nRF52840 QSPI peripheral (pins are selectable). This 8 MB layout
+// with the SPIM2 peripheral and the drivers/flash/spi_nor driver
+// (CONFIG_FLASH_SPI_NOR=y). This 8 MB layout
 // mirrors the region set used by the 32 MB gd25lq255e map (asterix) but is
 // scaled to fit the smaller part: the two 1 MB system-resource banks and the
 // firmware slot are preserved so the resource store and OTA metadata resolve,
