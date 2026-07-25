@@ -207,6 +207,17 @@ status_t flash_impl_init(bool coredump_mode) {
   nrfx_err_t err = nrfx_spim_init(&BOARD_CONFIG_FLASH.spi, &config, NULL, NULL);
   PBL_ASSERTN(err == NRFX_SUCCESS);
 
+  // Espruino puts the flash into Deep Power-Down (0xB9) and never wakes it; DPD
+  // survives an MCU reset/reflash since VCC never drops, so on a from-Espruino
+  // boot the part ignores every command except 0xAB (Release from DPD) until
+  // woken. Poke it 3x (tRES1 = 30us settle each) before touching the bus for
+  // real -- harmless if the part was never in DPD.
+  PBL_LOG_DBG("SPI-NOR: releasing from deep power-down (in case Espruino left it there)");
+  for (int i = 0; i < 3; ++i) {
+    prv_cmd(SPI_NOR_OP_RDP);
+    delay_us(30U);
+  }
+
   // Reset the part to abort any program/erase left in progress from before reboot.
   prv_cmd(SPI_NOR_OP_RSTEN);
   prv_cmd(SPI_NOR_OP_RST);
