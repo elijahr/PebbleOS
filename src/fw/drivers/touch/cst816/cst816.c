@@ -30,6 +30,8 @@ PBL_LOG_MODULE_DEFINE(driver_touch_cst816, CONFIG_DRIVER_TOUCH_LOG_LEVEL);
 #define CST816_POWER_MODE_REG         0xE5
 #define CST816_POWER_MODE_SLEEP       0x03
 #define CST816_CHIP_ID_REG            0xA7
+#define CST816_CHIP_ID_CST816S        0xB4
+#define CST816_CHIP_ID_CST816T        0xB6
 #define CST816_FW_VERSION_REG         0xA9
 #define CST816_TOUCH_DATA_REG         0x02
 #define CST816_TOUCH_DATA_SIZE        5
@@ -266,8 +268,19 @@ void touch_sensor_init(void) {
 
   uint8_t target_ver = app_bin[sizeof(app_bin) + CST816_FW_VER_INFO_INDEX];
 
+  // Only ever write firmware to a chip we can positively identify as a CST816S/T.
+  // An unrecognized chip ID means either a different part or a bad read; flashing
+  // blindly based on fw_version alone could brick whatever is actually on the bus.
+  bool chip_id_recognized =
+      (chip_id == CST816_CHIP_ID_CST816S) || (chip_id == CST816_CHIP_ID_CST816T);
+
   if (target_ver != fw_version) {
-    if (cst816_enter_bootmode()) {
+    if (!chip_id_recognized) {
+      PBL_LOG_WRN(
+          "Unrecognized touch chip ID 0x%02X (fw 0x%02X != target 0x%02X); "
+          "skipping touch-fw auto-update",
+          chip_id, fw_version, target_ver);
+    } else if (cst816_enter_bootmode()) {
       rv = cst816_fw_update();
       if (!rv) {
         return;
@@ -277,6 +290,16 @@ void touch_sensor_init(void) {
       return;
     }
   }
+
+#ifdef CONFIG_SOC_NRF52
+  // The nRF exti driver (src/fw/drivers/exti/nrf5.c) expects the GPIO input
+  // buffer to already be configured -- unlike SiFli's exti driver, it does not
+  // configure the pin itself (see nrf5/button.c for the pattern other nRF exti
+  // consumers follow). Without this, the INT pin's input buffer stays
+  // disconnected (PIN_CNF reset default) and GPIOTE never observes the edge.
+  // INT is push-pull, so NOPULL is correct.
+  nrf_gpio_cfg_input(CST816->int_exti.gpio_pin, NRF_GPIO_PIN_NOPULL);
+#endif
 
   // initialize exti
   exti_configure_pin(CST816->int_exti, ExtiTrigger_Falling, prv_exti_cb);
