@@ -118,6 +118,9 @@ void debounced_button_init(void) {
 
   for (int i = 0; i < NUM_BUTTONS; ++i) {
     const ExtiConfig config = BOARD_CONFIG_BUTTON.buttons[i].gpiote;
+    if (config.gpio_pin == GPIO_Pin_NULL) {
+      continue;  // phantom slot: 0xFFFF would assert inside nrfx_gpiote
+    }
     exti_configure_pin(config, ExtiTrigger_RisingFalling, prv_button_interrupt_handler);
     exti_enable(config);
   }

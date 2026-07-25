@@ -39,32 +39,35 @@ static const BoardConfig BOARD_CONFIG = {
   .backlight_on_percent = 25,
 };
 
-// Bangle.js 2 has a single physical button (BTN1 on P0.17, IN_PULLDOWN, active
-// high). PebbleOS assumes a four-button model, so the remaining slots point at
-// unused GPIOs as placeholders; Track B (O-4) finalizes the single-button +
-// touch mapping onto Pebble's button model.
+// Bangle.js 2 has a single physical button, BTN1 on P0.17. Espruino declares it
+// IN_PULLDOWN but marks the pin NEGATED (BANGLEJS2.py:219): its HAL swaps the
+// pull to PULLUP and inverts reads, so the effective hardware config is internal
+// PULLUP, pressed = electrically LOW -- matching gfwilliams/pebble-banglejs2.
+// PebbleOS assumes a four-button model; the three phantom slots are parked on
+// GPIO_Pin_NULL (the nrf5 button drivers skip NULL pins) so a floating pad can
+// never read as a stuck-pressed button under the pullup.
 static const BoardConfigButton BOARD_CONFIG_BUTTON = {
-  .buttons = {
-    // Placeholder pin P0.11: unused in this board file and in Espruino
-    // boards/BANGLEJS2.py. Must NOT reuse P0.10 — that is DBG_UART rx (see
-    // DBG_UART_DEVICE.rx_gpio in board_bangle2.c); the idle UART line level
-    // would otherwise read as a permanently-held Back button on real hardware.
-    [BUTTON_ID_BACK] =
-        { "Back",   { NRFX_GPIOTE_INSTANCE(0), 2, NRF_GPIO_PIN_MAP(0, 11) }, NRF_GPIO_PIN_PULLDOWN },
-    [BUTTON_ID_UP] =
-        { "Up",     { NRFX_GPIOTE_INSTANCE(0), 3, NRF_GPIO_PIN_MAP(0, 4)  }, NRF_GPIO_PIN_PULLDOWN },
-    [BUTTON_ID_SELECT] =
-        { "Select", { NRFX_GPIOTE_INSTANCE(0), 4, NRF_GPIO_PIN_MAP(0, 17) }, NRF_GPIO_PIN_PULLDOWN },
-    [BUTTON_ID_DOWN] =
-        { "Down",   { NRFX_GPIOTE_INSTANCE(0), 5, NRF_GPIO_PIN_MAP(0, 28) }, NRF_GPIO_PIN_PULLDOWN },
-  },
-  .active_high = true,
-  // Only P0.17 (SELECT) is a real button; the other three slots are dead
-  // placeholder GPIOs. Time-disambiguate the one button: short press = SELECT,
-  // long hold = BACK. Combined with touch swipe -> UP/DOWN (CONFIG_TOUCH_NAV_
-  // BUTTONS) this makes the four-button UI fully navigable on one button + touch.
-  .select_short_back_long = true,
-  .timer = NRFX_TIMER_INSTANCE(1),
+    .buttons =
+        {
+            [BUTTON_ID_BACK] = {"Back",
+                                {NRFX_GPIOTE_INSTANCE(0), 0, GPIO_Pin_NULL},
+                                NRF_GPIO_PIN_PULLUP},
+            [BUTTON_ID_UP] = {"Up",
+                              {NRFX_GPIOTE_INSTANCE(0), 0, GPIO_Pin_NULL},
+                              NRF_GPIO_PIN_PULLUP},
+            [BUTTON_ID_SELECT] = {"Select",
+                                  {NRFX_GPIOTE_INSTANCE(0), 4, NRF_GPIO_PIN_MAP(0, 17)},
+                                  NRF_GPIO_PIN_PULLUP},
+            [BUTTON_ID_DOWN] = {"Down",
+                                {NRFX_GPIOTE_INSTANCE(0), 0, GPIO_Pin_NULL},
+                                NRF_GPIO_PIN_PULLUP},
+        },
+    .active_high = false,
+    // Only P0.17 (SELECT) is real. Time-disambiguate the one button: short press =
+    // SELECT, long hold = BACK (our design choice; Gordon maps his to BACK).
+    // Touch swipe -> UP/DOWN (CONFIG_TOUCH_NAV_BUTTONS) completes navigation.
+    .select_short_back_long = true,
+    .timer = NRFX_TIMER_INSTANCE(1),
 };
 
 // Non-PMIC power path (Bangle.js 2 has no PMIC). Battery voltage is sensed by a
