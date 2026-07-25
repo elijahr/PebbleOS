@@ -163,6 +163,162 @@ A wedge BEFORE the firmware's watchdog self-arm hangs forever. That
 window is milliseconds wide and SWD-recoverable. A wedge after the arm
 resets within 8 s and shows in RESETREAS.
 
+The subsections below extend the triage list. Do step 0 before you
+flash. Do step 1 first at the bench. Use the other subsections when the
+matching symptom appears.
+
+```{note}
+Build the bring-up image at a debug log level
+(`-DCONFIG_DEFAULT_LOG_LEVEL_DEBUG=y`). The default level is INFO.
+INFO-level builds compile out every `PBL_LOG_DBG` line. The UICR
+visibility line and the charge-pin lines below are `PBL_LOG_DBG` lines.
+A release-level build never shows them.
+```
+
+### Triage step 0: UICR state check (before flash, after first boot)
+
+Dump the UICR twice: once before you flash, once after the first boot.
+Read the words over SWD (OpenOCD console, target halted):
+
+```
+mdw 0x10001200 2      ;# PSELRESET[0], PSELRESET[1]
+mdw 0x10001208        ;# APPROTECT
+mdw 0x1000120C        ;# NFCPINS
+mdw 0x10001304        ;# REGOUT0
+```
+
+Interpret the pre-flash dump with this table. The dump predicts exactly
+which SystemInit write+reset cycles fire on the first boot:
+
+| Word | Value | Meaning | First-boot action |
+|---|---|---|---|
+| PSELRESET[0..1] | `0xFFFFFFFF` | Erased; no reset pin | None. `CONFIG_GPIO_AS_PINRESET` is dropped for bangle2. The write block does not exist in the binary. |
+| NFCPINS | `0xFFFFFFFE` | GPIO mode (Espruino-programmed) | None. The guard skips. |
+| NFCPINS | `0xFFFFFFFF` | NFC mode (erased default) | One write + reset cycle. |
+| REGOUT0 | `0xFFFFFFFD` | VOUT = 5 = 3.3 V (Espruino-programmed) | None. The guard skips. |
+| REGOUT0 | `0xFFFFFFFF` | Erased default (1.8 V) | One write + reset cycle. The guard programs VOUT = 5. |
+| APPROTECT | Open (disabled) | Debug port open | None. The firmware never writes APPROTECT. See the APPROTECT gate above. |
+
+Known state of THIS watch (pre-flash dump
+`restore/bangle2-eek-stock-uicr-2026-07-24.bin`, spellbook docs tree):
+REGOUT0 = `0xFFFFFFFD` (3.3 V already), NFCPINS = `0xFFFFFFFE` (GPIO),
+PSELRESET[0..1] = `0xFFFFFFFF` (erased), APPROTECT open. Expected first
+boot on this watch: ZERO UICR writes. The post-boot dump must be
+byte-identical to the pre-flash dump. Compare with `diff` on two SWD
+dumps of `0x10001000 0x400`.
+
+The guard-programmed-from-default REGOUT0 value is exactly
+`0xFFFFFFFD`. It is not a `0x...F5` variant. If REGOUT0 reads a value
+that is not 3V3-coded and not the erased default: stop. Fix it over SWD
+per the mass_erase policy. The firmware does not touch it.
+
+After a `mass_erase` (fully erased UICR), expect up to TWO write+reset
+cycles on the next boot: NFCPINS first, then REGOUT0. Then re-read
+REGOUT0 and verify VOUT = 5.
+
+Visibility: `main.c` logs `UICR REGOUT0=0x...` once at boot. This line
+is `PBL_LOG_DBG` (see the log-level note above).
+
+### Triage step 1: verify the debug UART pads
+
+TX is P1.11 (UATX pad). RX is P1.10 (UARX pad). This pin claim has a
+single source (gfwilliams/pebble-banglejs2). It stays UNVERIFIED until
+this step passes. Connect a 3.3 V UART adapter to the pads. Run:
+
+```sh
+python tools/pulse_console.py -t /dev/ttyUSB0
+```
+
+Boot the watch. Console output proves the pads. No output means: wrong
+pads, or a boot wedge before the first log line. Halt over SWD and read
+the PC to tell the two apart. Every later triage step reads this
+console, so do this step first.
+
+### Display fallback: 2 MHz clock drop (documented only)
+
+No code change ships for this item. The shipped tree keeps the 4 MHz
+SPIM clock. Apply the fallback at the bench ONLY if the display
+misbehaves (garbage, ghosting, no image):
+
+1. Edit `src/fw/drivers/display/lpm013m126/lpm013m126_nrf5.c:269`.
+   Change `config.frequency = NRFX_MHZ_TO_HZ(4);` to
+   `NRFX_MHZ_TO_HZ(2)`. 2 MHz is Gordon's hardware-proven clock.
+2. Rebuild. Reflash. Retest.
+
+This fallback is a clock drop only. It is NOT a 1-bit-mode rebuild.
+1-bit mode uses a different update command and a different framebuffer
+format. 1-bit mode is out of scope.
+
+### Button polarity falsification test
+
+The shipped config is internal PULLUP, active-low. The line idles HIGH.
+A press reads electrically LOW. This matches effective Espruino behavior
+(the NEGATED pin flag) and Gordon's port. An earlier fork-comparison
+report stated the opposite; that report now carries an erratum.
+
+Confirm on hardware: press the button and watch for the press event on
+the console. Correct polarity shows one press event per press, and no
+events at idle.
+
+Wrong polarity looks like one of these two symptoms:
+
+- The button reads stuck-pressed from boot: constant or repeated press
+  events with no touch.
+- The button reads dead: no events on press.
+
+The three phantom button slots are parked on `GPIO_Pin_NULL`, and the
+drivers skip NULL pins. A floating pad can no longer fake a
+stuck-pressed button. If a stuck or dead button appears, first apply
+the falsification test: change the P0.17 slot to PULLDOWN/active-high
+locally, rebuild, and retest. If the button then works, the active-low
+claim was wrong — record that result. If the button fails both ways,
+suspect wiring, not polarity.
+
+### Charge-pin truth table (P0.23 vs P0.25)
+
+The shipped driver reads two pins. P0.23 is the sole authority
+(Espruino semantics: LOW = charging). P0.25 is a logged observer only.
+It feeds no decision. The true semantics stay UNRESOLVED until this
+observation: Espruino semantics say P0.23 = charging; Gordon semantics
+say P0.23 = USB present and P0.25 = charging. Gordon's note against
+interrupt-driven charge sensing is hedged ("can cause instability?") —
+a question, not a confirmed claim. Both pins stay poll-only regardless.
+
+Fill this table at the bench from the
+`charge pins: P0.23=... P0.25=...` log lines (`PBL_LOG_DBG`; see the
+log-level note above). The line prints only on change.
+
+| USB | Battery | P0.23 | P0.25 |
+|---|---|---|---|
+| Plugged | Not full (charging) | ? | ? |
+| Plugged | Full (charge complete) | ? | ? |
+| Unplugged | Not full | ? | ? |
+| Unplugged | Full | ? | ? |
+
+Decode: if P0.23 goes HIGH at charge-complete while USB stays plugged,
+P0.23 means "charging" (Espruino semantics). If P0.23 stays LOW
+whenever USB is plugged, P0.23 means "USB present" and P0.25 is the
+charging line (Gordon semantics). Update
+`src/fw/drivers/battery/battery_bangle2.c` per the observed table. This
+table is the one the driver comment points at.
+
+### JEDEC flash-id triage
+
+The boot log names the external-flash part. The classifier has three
+tiers:
+
+| Tier | Log line | Boot behavior |
+|---|---|---|
+| Known id | `SPI-NOR flash GD25Q64E detected (JEDEC 0x001740c8)` or `SPI-NOR flash XT25F64B detected (JEDEC 0x0017400b)` | Normal boot. INFO line only. |
+| Unknown 8 MB | `UNKNOWN-8MB SPI-NOR (JEDEC 0x...): right capacity, unknown vendor; ...` | Warn, then boot. Verify the part. Update `bangle2_flash_ids.h`. |
+| Dead bus / rejected | `SPI-NOR JEDEC id 0x... DEAD-BUS -- refusing to boot ...` or `... REJECTED -- refusing to boot ...` | Fail-loud croak. The watch does not boot. |
+
+Read the raw id from the log line. `0x000000` or `0xFFFFFF` means a
+dead bus (wiring, power, or CS problem). Any other rejected id means a
+real part answered with a wrong capacity — check the fitted chip. The
+XTX manufacturer byte `0x0B` is INFERRED, not JEP106-verified; a real
+`0x0017400B` read here is its confirmation.
+
 ## mass_erase policy (recover / full clean only)
 
 1. Gate on FICR first (see the APPROTECT gate above).
