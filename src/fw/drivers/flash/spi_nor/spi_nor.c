@@ -26,11 +26,15 @@
 //  - The nRF52840 SPIM is a single-data-line master, so the real part's 0x3B
 //    dual-output fast read is NOT used; the driver issues the universally supported
 //    single-line 0x03 read. Correct for any SPI NOR, just not dual-IO speed.
-//  - The concrete part / JEDEC id is UNKNOWN (Espruino never issues RDID). A
-//    defensible GD25Q64E placeholder (RDID 0x9F -> C8 40 17) is enforced at boot;
-//    update SPI_NOR_JEDEC_ID / SPI_NOR_PART_NAME if a teardown names the real part.
+//  - The concrete part / JEDEC id is UNKNOWN (Espruino never issues RDID). Boot
+//    accepts a three-tier id classification instead of a single placeholder:
+//    known GD25Q64 / XT25F64B pass; a dead bus or wrong capacity byte fails
+//    loud; an unknown vendor with the right (8 MB) capacity byte warns and
+//    boots. See bangle2_flash_ids.h (shared with the legacy bangle2_flash.c
+//    backend) for the accepted set and the classifier itself.
 
 #include "board/board.h"
+#include "drivers/flash/bangle2_flash_ids.h"
 #include "drivers/flash/flash_impl.h"
 #include "drivers/gpio.h"
 #include "flash_region/flash_region.h"
@@ -81,14 +85,6 @@
 // static RX bounce buffer covers both.
 #define SPI_NOR_MAX_DATA 256U
 
-// ASSUMED PLACEHOLDER (see file header): GigaDevice GD25Q64E. RDID (0x9F) returns
-// C8 40 17 -> manufacturer 0xC8 (GigaDevice), device 0x4017 (64 Mbit = 8 MB),
-// packed here LSB-first (first RDID byte in bits[7:0]) to match how whoami builds
-// the compare word. NOT silicon-confirmed for the SMA-Q3.
-#define SPI_NOR_JEDEC_ID 0x001740C8UL
-#define SPI_NOR_PART_NAME "GD25Q64E"
-#define SPI_NOR_SIZE 0x800000UL  // 8 MB
-
 // Reset recovery time. Renode ignores it; real parts settle in well under this.
 #define SPI_NOR_RESET_LATENCY_US 12000U
 
@@ -102,9 +98,10 @@ static FlashAddress s_protected_start;
 static FlashAddress s_protected_end;
 
 // Boot-time JEDEC chip-ID validation result. Set by flash_impl_init() once the
-// RDID read has confirmed the attached part matches SPI_NOR_JEDEC_ID. Kept as a
-// module global (matching the QSPI backend's symbol name) so the emulator harness
-// can read it back as direct evidence the RDID was issued and matched.
+// classifier accepted the id (known part or unknown-8MB warn tier); see
+// bangle2_flash_ids.h. Kept as a module global (matching the QSPI backend's
+// symbol name) so the emulator harness can read it back as direct evidence the
+// RDID was issued and classified.
 static bool s_flash_whoami_ok;
 
 // -----------------------------------------------------------------------------
@@ -157,17 +154,15 @@ static uint8_t prv_read_sr2(void) {
 
 static bool prv_wip(void) { return (prv_read_sr1() & SPI_NOR_SR1_WIP) != 0U; }
 
-static bool prv_check_whoami(void) {
+static uint32_t prv_read_jedec_id(void) {
   uint8_t tx[1] = {SPI_NOR_OP_RDID};
   uint8_t rx[4] = {0};
 
   prv_txn(tx, sizeof(tx), rx, sizeof(rx));
 
   // rx[0] is clocked out during the opcode byte (don't-care); the 3 id bytes
-  // follow. Pack LSB-first (manufacturer in bits[7:0]) to compare against the
-  // configured id.
-  uint32_t id = (uint32_t)rx[1] | ((uint32_t)rx[2] << 8U) | ((uint32_t)rx[3] << 16U);
-  return id == SPI_NOR_JEDEC_ID;
+  // follow. Pack LSB-first (manufacturer in bits[7:0]) per bangle2_flash_ids.h.
+  return (uint32_t)rx[1] | ((uint32_t)rx[2] << 8U) | ((uint32_t)rx[3] << 16U);
 }
 
 static void prv_fill_addr(uint8_t *buf, uint8_t op, FlashAddress addr) {
@@ -218,19 +213,42 @@ status_t flash_impl_init(bool coredump_mode) {
   delay_us(SPI_NOR_RESET_LATENCY_US);
 
   // Validate the attached flash by its JEDEC id before trusting it for PFS,
-  // resources, coredumps, or firmware storage. A watch fitted with the wrong
-  // SPI-NOR part cannot boot correctly, so a mismatch is fatal rather than
-  // silently ignored -- this is the check that makes chip detection real instead
-  // of vacuous.
-  s_flash_whoami_ok = prv_check_whoami();
-  if (!s_flash_whoami_ok) {
-    PBL_LOG_ERR("SPI-NOR flash WHOAMI mismatch: attached part is not %s (expected JEDEC 0x%06" PRIx32
-                ") -- refusing to boot on unknown flash",
-                SPI_NOR_PART_NAME, (uint32_t)SPI_NOR_JEDEC_ID);
-    PBL_ASSERT(s_flash_whoami_ok, "SPI-NOR flash JEDEC id mismatch");
+  // resources, coredumps, or firmware storage. A watch fitted with a rejected
+  // SPI-NOR part cannot boot correctly, so a dead bus or wrong capacity is
+  // fatal rather than silently ignored -- this is the check that makes chip
+  // detection real instead of vacuous. An unknown vendor with the right
+  // capacity only warns: see bangle2_flash_ids.h for the full tier rationale.
+  const uint32_t jedec_id = prv_read_jedec_id();
+  const Bangle2FlashIdClass id_class = bangle2_flash_classify_jedec(jedec_id);
+  s_flash_whoami_ok = (id_class == Bangle2FlashIdKnownGD25Q64) ||
+                      (id_class == Bangle2FlashIdKnownXT25F64B) ||
+                      (id_class == Bangle2FlashIdUnknown8Mb);
+  switch (id_class) {
+    case Bangle2FlashIdKnownGD25Q64:
+      // Part string stays "GD25Q64E" (not "GD25Q64"): matches the existing
+      // harness docstrings/greps and the pre-classifier INFO line -- no
+      // needless divergence.
+      PBL_LOG_INFO("SPI-NOR flash %s detected (JEDEC 0x%06" PRIx32 ")", "GD25Q64E", jedec_id);
+      break;
+    case Bangle2FlashIdKnownXT25F64B:
+      PBL_LOG_INFO("SPI-NOR flash %s detected (JEDEC 0x%06" PRIx32 ")", "XT25F64B", jedec_id);
+      break;
+    case Bangle2FlashIdUnknown8Mb:
+      // The %s arg is a readable marker in loghashed captures (harness greps it).
+      PBL_LOG_WRN("%s SPI-NOR (JEDEC 0x%06" PRIx32
+                  "): right capacity, unknown vendor; verify part and update "
+                  "bangle2_flash_ids.h",
+                  "UNKNOWN-8MB", jedec_id);
+      break;
+    case Bangle2FlashIdDeadBus:
+    case Bangle2FlashIdUnknownReject:
+      PBL_LOG_ERR("SPI-NOR JEDEC id 0x%06" PRIx32
+                  " %s -- refusing to boot (accepted: GD25Q64 0x001740C8, "
+                  "XT25F64B 0x0017400B, or any 8 MB capacity byte 0x17)",
+                  jedec_id, (id_class == Bangle2FlashIdDeadBus) ? "DEAD-BUS" : "REJECTED");
+      PBL_ASSERT(s_flash_whoami_ok, "SPI-NOR flash JEDEC id dead-bus/rejected");
+      break;
   }
-  PBL_LOG_INFO("SPI-NOR flash %s detected (JEDEC 0x%06" PRIx32 ")", SPI_NOR_PART_NAME,
-               (uint32_t)SPI_NOR_JEDEC_ID);
 
   return S_SUCCESS;
 }
