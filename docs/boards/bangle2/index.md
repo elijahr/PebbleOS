@@ -188,7 +188,9 @@ mdw 0x10001304        ;# REGOUT0
 ```
 
 Interpret the pre-flash dump with this table. The dump predicts exactly
-which SystemInit write+reset cycles fire on the first boot:
+which write+reset cycles fire on the first boot. The NFCPINS guard runs
+in SystemInit. The REGOUT0 guard runs in Reset_Handler
+(`startup_cortex_m.c`, after SystemInit returns):
 
 | Word | Value | Meaning | First-boot action |
 |---|---|---|---|
@@ -316,8 +318,10 @@ tiers:
 Read the raw id from the log line. `0x000000` or `0xFFFFFF` means a
 dead bus (wiring, power, or CS problem). Any other rejected id means a
 real part answered with a wrong capacity — check the fitted chip. The
-XTX manufacturer byte `0x0B` is INFERRED, not JEP106-verified; a real
-`0x0017400B` read here is its confirmation.
+XTX manufacturer byte `0x0B` is CONFIRMED (flashrom defines
+`XTX_ID = 0x0B`). Only the attribution of the XT25F64B id to Gordon's
+hardware correction stays inferred; a real `0x0017400B` read here
+confirms that too.
 
 ## mass_erase policy (recover / full clean only)
 
