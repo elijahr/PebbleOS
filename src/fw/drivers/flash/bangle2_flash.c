@@ -15,15 +15,12 @@
 // the real watch would need either the QSPI peripheral routed to those GPIOs or
 // a bit-banged/SPIM SPI-NOR driver. Flagged for a design decision.
 //
-// Because the emulator must be able to *fail* a wrong flash driver at boot
-// (making chip-ID validation real instead of vacuous), a concrete real part is
-// ASSUMED here as a defensible placeholder: GigaDevice GD25Q64E, a
-// current-production 64 Mbit dual-IO SPI-NOR whose RDID (0x9F) returns C8 40 17.
-// This is NOT silicon-confirmed for the SMA-Q3 — if a teardown names a different
-// part, update qspi_id_value / name to match. The boot whoami check below proves
-// the validation MECHANISM works (RDID issued, compared, mismatch fails boot); it
-// does NOT prove the silicon identity, since the model is co-tuned to this same
-// assumed id. This driver uses a generic dual-IO SPI NOR opcode set (JEDEC
+// Boot accepts a three-tier id classification instead of a single placeholder:
+// known GD25Q64 / XT25F64B pass; a dead bus or wrong capacity byte fails loud;
+// an unknown vendor with the right (8 MB) capacity byte warns and boots. See
+// bangle2_flash_ids.h (shared with the active spi_nor/spi_nor.c backend) for
+// the accepted set and the classifier itself, so the two backends cannot
+// drift. This driver uses a generic dual-IO SPI NOR opcode set (JEDEC
 // standard opcodes). No security-register / OTP support is exposed
 // (num_sec_regs = 0), so otp_get_slot() degrades gracefully to "no serial"
 // rather than requiring a modeled security-register array.
@@ -31,6 +28,7 @@
 // Modeled on drivers/flash/gd25lq255e.c.
 
 #include "board/board.h"
+#include "drivers/flash/bangle2_flash_ids.h"
 #include "drivers/flash/flash_impl.h"
 #include "drivers/flash/qspi_flash.h"
 #include "drivers/flash/qspi_flash_part_definitions.h"
@@ -48,11 +46,11 @@ static FlashAddress s_protected_start;
 static FlashAddress s_protected_end;
 
 // Boot-time JEDEC chip-ID validation result. Set by flash_impl_init(): true once
-// qspi_flash_check_whoami() has confirmed the attached part matches
-// QSPI_FLASH_PART.qspi_id_value. Exposed as a module global (not just a local)
-// so the emulator harness can read it back over the bus as direct evidence that
-// the RDID was issued and matched, rather than inferring it from downstream boot
-// progress.
+// the classifier accepted the id (known part or unknown-8MB warn tier); see
+// bangle2_flash_ids.h. Exposed as a module global (not just a local) so the
+// emulator harness can read it back over the bus as direct evidence that the
+// RDID was issued and classified, rather than inferring it from downstream
+// boot progress.
 static bool s_flash_whoami_ok;
 
 static QSPIFlashPart QSPI_FLASH_PART = {
@@ -109,9 +107,10 @@ static QSPIFlashPart QSPI_FLASH_PART = {
     .supports_fast_read_ddr = false,
     /* Dual-IO reads need no quad-enable bit. */
     .qer_type = JESD216_DW15_QER_NONE,
-    /* ASSUMED PLACEHOLDER (see header): GigaDevice GD25Q64E RDID (0x9F) C8 40 17 ->
-     * manufacturer 0xC8 (GigaDevice), device 0x4017 (64 Mbit). Enforced at boot by
-     * flash_impl_init() below. Real Bangle.js 2 JEDEC id is UNVERIFIED. */
+    /* Part-struct default id (GigaDevice GD25Q64E, C8 40 17); NOT what gates
+     * boot anymore. flash_impl_init() below now reads the raw id and runs it
+     * through the shared bangle2_flash_ids.h classifier, so the accepted set
+     * is the three-tier one, not a single-value compare against this field. */
     .qspi_id_value = 0x001740c8,
     .size = 0x800000, /* 8 MB */
     .name = "GD25Q64E",
@@ -165,23 +164,43 @@ status_t flash_impl_init(bool coredump_mode) {
   qspi_flash_init(QSPI_FLASH, &QSPI_FLASH_PART, coredump_mode);
 
   // Validate the attached flash by its JEDEC id before trusting it for PFS,
-  // resources, coredumps, or firmware storage. A watch fitted with the wrong
-  // SPI-NOR part cannot boot correctly, so a mismatch is fatal rather than
-  // silently ignored -- this is the check that makes chip detection real instead
-  // of vacuous. (nrf5 qspi_flash_check_whoami() reads 3 RDID bytes into a
-  // uint32_t; on this port Renode zero-fills RAM so the untouched MSB reads 0 and
-  // the compare is exact. See the reconciliation note in the harness / report:
-  // on real silicon that MSB is uninitialized stack and the shared nrf5 driver
-  // should zero-init it.)
-  s_flash_whoami_ok = qspi_flash_check_whoami(QSPI_FLASH);
-  if (!s_flash_whoami_ok) {
-    PBL_LOG_ERR("QSPI flash WHOAMI mismatch: attached part is not %s (expected JEDEC 0x%06" PRIx32
-                ") -- refusing to boot on unknown flash",
-                QSPI_FLASH_PART.name, QSPI_FLASH_PART.qspi_id_value);
-    PBL_ASSERT(s_flash_whoami_ok, "QSPI flash JEDEC id mismatch");
+  // resources, coredumps, or firmware storage. A watch fitted with a rejected
+  // SPI-NOR part cannot boot correctly, so a dead bus or wrong capacity is
+  // fatal rather than silently ignored -- this is the check that makes chip
+  // detection real instead of vacuous. An unknown vendor with the right
+  // capacity only warns: see bangle2_flash_ids.h for the full tier rationale.
+  uint32_t jedec_id = 0;
+  PBL_ASSERTN(qspi_flash_read_id(QSPI_FLASH, &jedec_id));
+  const Bangle2FlashIdClass id_class = bangle2_flash_classify_jedec(jedec_id);
+  s_flash_whoami_ok = (id_class == Bangle2FlashIdKnownGD25Q64) ||
+                      (id_class == Bangle2FlashIdKnownXT25F64B) ||
+                      (id_class == Bangle2FlashIdUnknown8Mb);
+  switch (id_class) {
+    case Bangle2FlashIdKnownGD25Q64:
+      // Part string stays "GD25Q64E" (not "GD25Q64"): matches the existing
+      // harness docstrings/greps and the pre-classifier INFO line -- no
+      // needless divergence.
+      PBL_LOG_INFO("QSPI flash %s detected (JEDEC 0x%06" PRIx32 ")", "GD25Q64E", jedec_id);
+      break;
+    case Bangle2FlashIdKnownXT25F64B:
+      PBL_LOG_INFO("QSPI flash %s detected (JEDEC 0x%06" PRIx32 ")", "XT25F64B", jedec_id);
+      break;
+    case Bangle2FlashIdUnknown8Mb:
+      // The %s arg is a readable marker in loghashed captures (harness greps it).
+      PBL_LOG_WRN("%s QSPI flash (JEDEC 0x%06" PRIx32
+                  "): right capacity, unknown vendor; verify part and update "
+                  "bangle2_flash_ids.h",
+                  "UNKNOWN-8MB", jedec_id);
+      break;
+    case Bangle2FlashIdDeadBus:
+    case Bangle2FlashIdUnknownReject:
+      PBL_LOG_ERR("QSPI flash JEDEC id 0x%06" PRIx32
+                  " %s -- refusing to boot (accepted: GD25Q64 0x001740C8, "
+                  "XT25F64B 0x0017400B, or any 8 MB capacity byte 0x17)",
+                  jedec_id, (id_class == Bangle2FlashIdDeadBus) ? "DEAD-BUS" : "REJECTED");
+      PBL_ASSERT(s_flash_whoami_ok, "QSPI flash JEDEC id dead-bus/rejected");
+      break;
   }
-  PBL_LOG_INFO("QSPI flash %s detected (JEDEC 0x%06" PRIx32 ")", QSPI_FLASH_PART.name,
-               QSPI_FLASH_PART.qspi_id_value);
 
   return S_SUCCESS;
 }

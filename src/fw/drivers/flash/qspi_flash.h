@@ -20,6 +20,12 @@ bool qspi_flash_is_in_coredump_mode(QSPIFlash *dev);
 //! Check if the WHOAMI matches the expected value
 bool qspi_flash_check_whoami(QSPIFlash *dev);
 
+//! Read the raw 3-byte JEDEC id, packed LSB-first (manufacturer in bits[7:0]).
+//! Returns true on success. Implemented for the nrf5 QSPI backend only; the
+//! sf32lb52 backend deliberately omits it (no sf32 board calls it, so no link
+//! error) -- implement there before adding an sf32 caller.
+bool qspi_flash_read_id(QSPIFlash *dev, uint32_t *id);
+
 //! Check if an in-progress erase is complete
 status_t qspi_flash_is_erase_complete(QSPIFlash *dev);
 
