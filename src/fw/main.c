@@ -1,8 +1,13 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <setjmp.h>
+
+#if defined(CONFIG_BOARD_BANGLE2)
+#include <nrfx.h>  // NRF_UICR for the boot-time REGOUT0 visibility log.
+#endif
 
 #include "debug/power_tracking.h"
 
@@ -144,6 +149,13 @@ int main(void) {
   dbgserial_init();
   pulse_early_init();
   print_splash_screen();
+
+#if defined(CONFIG_BOARD_BANGLE2)
+  // Boot visibility for UICR triage (runbook step 0). Expected on this watch:
+  // 0xFFFFFFFD (VOUT=5 = 3.3 V). The Reset_Handler guard only programs the
+  // erased default; any other non-3V3 value is fixed over SWD, never here.
+  PBL_LOG_DBG("UICR REGOUT0=0x%08" PRIx32, NRF_UICR->REGOUT0);
+#endif
 
   // Bare-metal at 0x0: no bootloader armed a WDT. Arm our own (nrf5.c: 8 s,
   // RR0) before rtc_init so the boot window is covered from here on. The
