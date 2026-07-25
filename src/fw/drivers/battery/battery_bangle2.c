@@ -18,6 +18,8 @@
 #include <hal/nrf_gpio.h>
 #include <hal/nrf_saadc.h>
 
+#include <inttypes.h>
+
 // AIN1 = P0.03 battery sense.
 #define BATTERY_SAADC_CHANNEL 0
 #define BATTERY_SAADC_INPUT NRF_SAADC_INPUT_AIN1
@@ -25,9 +27,19 @@
 // Charge detect: P0.23, active low (line idles high = no charger).
 #define CHARGE_DETECT_PIN NRF_GPIO_PIN_MAP(0, 23)
 
+// Gordon's candidate charge-status line (board_banglejs2.h chg_stat, P0.25).
+// SINGLE-SOURCE and UNVERIFIED: Espruino never references D25. Configured as a
+// logged observer ONLY -- it feeds no decision until first-boot triage decodes
+// the P0.23/P0.25 truth table (docs/boards/bangle2/index.md).
+#define CHG_STAT_CANDIDATE_PIN NRF_GPIO_PIN_MAP(0, 25)
+
 // Espruino BANGLEJS2 calibration: raw code 1288 <-> 4200 mV.
 #define BATTERY_RAW_AT_4V2 1288
 #define BATTERY_MV_AT_4V2 4200
+
+// Voltage-divider cross-check constants from gfwilliams (board_banglejs2.h
+// battery_vmon_scale): R13 = 47k over R15 = 30.1k, scale 771/301. Hardware
+// truth INFERRED; kept for future SAADC cross-checks only.
 
 // Poll guard so a mis-wired SAADC can never wedge the caller. The Renode model
 // completes synchronously, so on emulation the events are already set.
@@ -41,6 +53,10 @@ volatile int32_t g_bangle2_battery_mv;
 void battery_init(void) {
   // Charge-detect input, pulled up so an open line reads high (not charging).
   nrf_gpio_cfg_input(CHARGE_DETECT_PIN, NRF_GPIO_PIN_PULLUP);
+
+  // Observer only; poll-only like P0.23 (no EXTI -- upstream fork notes
+  // interrupt-driven charge sensing caused instability).
+  nrf_gpio_cfg_input(CHG_STAT_CANDIDATE_PIN, NRF_GPIO_PIN_PULLUP);
 
   nrf_saadc_resolution_set(NRF_SAADC, NRF_SAADC_RESOLUTION_12BIT);
 
@@ -112,9 +128,26 @@ int battery_charge_status_get(BatteryChargeStatus *status) {
   return 0;
 }
 
+static void prv_log_charge_pins(uint32_t p23, uint32_t p25) {
+  // Log only on change: this poll runs periodically and must not spam.
+  static uint32_t s_last_packed = UINT32_MAX;
+  const uint32_t packed = (p23 << 1U) | p25;
+
+  if (packed != s_last_packed) {
+    s_last_packed = packed;
+    PBL_LOG_DBG("charge pins: P0.23=%" PRIu32 " P0.25=%" PRIu32 " (both active-low candidates)",
+                p23, p25);
+  }
+}
+
 bool battery_charge_controller_thinks_we_are_charging_impl(void) {
-  // Active low: pin low => charger present.
-  return nrf_gpio_pin_read(CHARGE_DETECT_PIN) == 0U;
+  const uint32_t p23 = nrf_gpio_pin_read(CHARGE_DETECT_PIN);
+  const uint32_t p25 = nrf_gpio_pin_read(CHG_STAT_CANDIDATE_PIN);
+
+  prv_log_charge_pins(p23, p25);
+  // Active low: pin low => charger present. P0.23 stays the sole authority
+  // (Espruino semantics); P0.25 is observed, never consulted.
+  return p23 == 0U;
 }
 
 bool battery_is_usb_connected_impl(void) {
