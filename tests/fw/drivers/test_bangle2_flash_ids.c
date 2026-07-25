@@ -23,6 +23,12 @@ static const IdCase s_cases[] = {
     // Wrong capacity -> fail-loud reject tier.
     {0x001640C8UL, Bangle2FlashIdUnknownReject},  // 4 MB capacity byte 0x16
     {0x001840C8UL, Bangle2FlashIdUnknownReject},  // 16 MB capacity byte 0x18
+    // Right capacity 0x17 but invalid JEP106 manufacturer byte (0x00 / 0xFF)
+    // -> reject, not warn-boot: partial bus garbage the dead-bus tier misses.
+    {0x00170000UL, Bangle2FlashIdUnknownReject},  // mfr 0x00, partial garbage
+    {0x001700FFUL, Bangle2FlashIdUnknownReject},  // mfr 0xFF, partial garbage
+    {0x00174000UL, Bangle2FlashIdUnknownReject},  // mfr 0x00, plausible type byte
+    {0x001740FFUL, Bangle2FlashIdUnknownReject},  // mfr 0xFF, plausible type byte
 };
 
 void test_bangle2_flash_ids__classify_all_tiers(void) {

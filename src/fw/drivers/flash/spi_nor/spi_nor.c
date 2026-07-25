@@ -234,7 +234,9 @@ status_t flash_impl_init(bool coredump_mode) {
       PBL_LOG_INFO("SPI-NOR flash %s detected (JEDEC 0x%06" PRIx32 ")", "XT25F64B", jedec_id);
       break;
     case Bangle2FlashIdUnknown8Mb:
-      // The %s arg is a readable marker in loghashed captures (harness greps it).
+      // The %s arg is readable in loghashed captures, but 'U' (0x55) is the
+      // NEWLOG frame-sync byte, so the harness greps the U-free fragment
+      // "NKNOWN-8MB" -- the full token never appears verbatim in the stream.
       PBL_LOG_WRN("%s SPI-NOR (JEDEC 0x%06" PRIx32
                   "): right capacity, unknown vendor; verify part and update "
                   "bangle2_flash_ids.h",
