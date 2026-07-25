@@ -32,13 +32,16 @@
 // mode, so its IRQ never fires, but map the vector defensively.
 IRQ_MAP_NRFX(SPI2_SPIM2_SPIS2, nrfx_spim_2_irq_handler);
 
-// Debug UART on unused GPIOs (placeholder pins; Bangle.js 2 has no dedicated
-// debug UART routed in the Espruino source).
+// Debug UART on the internal UATX (P1.11) / UARX (P1.10) test pads per
+// gfwilliams/pebble-banglejs2 (GORDON-SOURCED, single-source: BANGLEJS2.py has
+// no console-pin declaration; unverified on our hardware — first-boot triage
+// step 1 IS the verification). Pulse console:
+//   python tools/pulse_console.py -t /dev/ttyUSB0
 static UARTDeviceState s_dbg_uart_state;
 static UARTDevice DBG_UART_DEVICE = {
     .state = &s_dbg_uart_state,
-    .tx_gpio = NRF_GPIO_PIN_MAP(0, 9),
-    .rx_gpio = NRF_GPIO_PIN_MAP(0, 10),
+    .tx_gpio = NRF_GPIO_PIN_MAP(1, 11),
+    .rx_gpio = NRF_GPIO_PIN_MAP(1, 10),
     .rts_gpio = NRF_UARTE_PSEL_DISCONNECTED,
     .cts_gpio = NRF_UARTE_PSEL_DISCONNECTED,
     .periph = NRFX_UARTE_INSTANCE(0),
