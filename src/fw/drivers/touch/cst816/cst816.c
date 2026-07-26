@@ -274,6 +274,13 @@ void touch_sensor_init(void) {
   bool chip_id_recognized =
       (chip_id == CST816_CHIP_ID_CST816S) || (chip_id == CST816_CHIP_ID_CST816T);
 
+#ifdef CONFIG_SOC_NRF52
+  // TEMPORARY bangle2 recovery: panel was mis-flashed with the getafix blob,
+  // which self-reports chip ID 0xB5. Allow one recovery flash. Remove after
+  // recovery (chip reports 0xB6 once CST816D fw is installed).
+  chip_id_recognized = chip_id_recognized || (chip_id == 0xB5);
+#endif
+
   if (target_ver != fw_version) {
     if (!chip_id_recognized) {
       PBL_LOG_WRN(

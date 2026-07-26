@@ -26,13 +26,14 @@ elif bld.env.CONFIG_BOARD_GETAFIX:
         ],
     )
 elif bld.env.CONFIG_BOARD_BANGLE2:
-    # Bangle.js 2 reuses the getafix CST816S firmware blob (same target version
-    # 0x07); the Renode CST816 model reports that version so the update path is
-    # skipped in emulation.
+    # TEMPORARY: bangle2 recovery blob. Panel was mis-flashed with the getafix
+    # CST816S firmware; this points at the lierda CST816D recovery blob instead
+    # so touch_sensor_init can re-flash the correct firmware. Revert to the
+    # getafix blob once recovery is confirmed.
     bld(
         name='cst816_fw',
         export_includes=[
-            'pebbleos-nonfree/cst816/getafix',
+            'cst816-bangle2-recovery',
         ],
     )
 if bld.env.CONFIG_BOARD_OBELIX:
