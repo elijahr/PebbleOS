@@ -26,6 +26,9 @@ typedef enum TouchGesture {
   //! button so drilled-in menus can be backed out of on devices with a
   //! touchscreen but no BACK button.
   TouchGesture_SwipeRight,
+  //! Horizontal swipe. Decoded by the driver but intentionally not wired to
+  //! any button by the touch-to-button navigation shim.
+  TouchGesture_SwipeLeft,
 } TouchGesture;
 
 void touch_init(void);

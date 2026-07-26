@@ -178,9 +178,39 @@ static void back_button_force_quit_handler(void *data) {
   launcher_task_add_callback(launcher_force_quit_app, NULL);
 }
 
+#if CONFIG_TOUCH_NAV_BUTTONS
+// Shared debounce for synthetic nav clicks: minimum spacing between two
+// consecutive atomic clicks, REGARDLESS of source (touch gesture shim in
+// services/touch/touch.c or the physical-button remap in
+// drivers/nrf5/debounced_button.c). Every synthetic click funnels through
+// launcher_handle_button_event() on KernelMain before any fan-out, so one
+// static tick value covers both producers. Deliberate inputs (distinct
+// swipes, taps, button presses) are far slower than this gap; it only
+// filters sensor/mechanical jitter and event floods. Tunable.
+#define SYNTHETIC_CLICK_MIN_GAP_MS 90
+static RtcTicks s_last_synthetic_click_ticks;
+#endif // CONFIG_TOUCH_NAV_BUTTONS
+
 static void launcher_handle_button_event(PebbleEvent* e) {
   ButtonId button_id = e->button.button_id;
   const bool watchface_running = app_manager_is_watchface_running();
+
+#if CONFIG_TOUCH_NAV_BUTTONS
+  if ((e->type == PEBBLE_BUTTON_DOWN_EVENT) && e->button.is_synthetic_click) {
+    const RtcTicks now = rtc_get_ticks();
+    const RtcTicks min_gap_ticks =
+        (SYNTHETIC_CLICK_MIN_GAP_MS * RTC_TICKS_HZ) / 1000;
+    if ((s_last_synthetic_click_ticks != 0) &&
+        ((now - s_last_synthetic_click_ticks) < min_gap_ticks)) {
+      // Too soon after the previous synthetic click: drop it for every
+      // consumer. KernelMain handling stops here, and masking all tasks
+      // makes the event_service fan-out skip every subscriber too.
+      e->task_mask = (PebbleTaskBitset)~0;
+      return;
+    }
+    s_last_synthetic_click_ticks = now;
+  }
+#endif
 
   // trigger the backlight on any button down event
   if (e->type == PEBBLE_BUTTON_DOWN_EVENT) {
@@ -189,11 +219,18 @@ static void launcher_handle_button_event(PebbleEvent* e) {
     if (button_id == BUTTON_ID_BACK && !watchface_running &&
         process_metadata_get_run_level(
             app_manager_get_current_app_md()) == ProcessAppRunLevelNormal) {
-      // Start timer for force-quitting app
-      s_force_quit_was_cancelled = false;
-      bool success = new_timer_start(s_back_hold_timer, FORCE_QUIT_HOLD_MS, back_button_force_quit_handler, NULL,
-                                     0 /*flags*/);
-      PBL_ASSERTN(success);
+#if CONFIG_TOUCH_NAV_BUTTONS
+      // An atomic synthetic click has no BUTTON_UP to cancel the timer, and
+      // a discrete tap/swipe can never be a "hold": never arm force-quit.
+      if (!e->button.is_synthetic_click)
+#endif
+      {
+        // Start timer for force-quitting app
+        s_force_quit_was_cancelled = false;
+        bool success = new_timer_start(s_back_hold_timer, FORCE_QUIT_HOLD_MS, back_button_force_quit_handler, NULL,
+                                       0 /*flags*/);
+        PBL_ASSERTN(success);
+      }
     }
     
 #ifndef CONFIG_SHELL_SDK
@@ -213,6 +250,14 @@ static void launcher_handle_button_event(PebbleEvent* e) {
 #endif // !defined(CONFIG_SHELL_SDK)
 
     light_button_pressed();
+#if CONFIG_TOUCH_NAV_BUTTONS
+    if (e->button.is_synthetic_click) {
+      // Atomic click: no BUTTON_UP will follow. Release the backlight
+      // refcount now so the light starts its normal timed fade instead of
+      // staying latched on.
+      light_button_released();
+    }
+#endif
   } else if (e->type == PEBBLE_BUTTON_UP_EVENT) {
     if (button_id == BUTTON_ID_BACK) {
       launcher_cancel_force_quit();

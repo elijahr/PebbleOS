@@ -8,6 +8,7 @@
 
 #include "process_state/app_state/app_state.h"
 #include "process_management/app_manager.h"
+#include "system/logging.h"
 #include "pbl/util/size.h"
 
 #include <stddef.h>
@@ -50,6 +51,9 @@ static void prv_click_reset(ClickRecognizerRef recognizer_ref) {
 
   prv_cancel_timer(&recognizer->hold_timer);
   prv_cancel_timer(&recognizer->multi_click_timer);
+#if CONFIG_TOUCH_NAV_BUTTONS
+  prv_cancel_timer(&recognizer->orphan_timer);
+#endif
 }
 
 static bool prv_dispatch_event(ClickRecognizer *recognizer, ClickHandlerOffset handler_offset,
@@ -257,8 +261,38 @@ void command_put_button_event(const char* button_index, const char* click_type) 
   prv_dispatch_event(&(app_state_get_click_manager()->recognizers[button]), offset, needs_reset);
 }
 
+#if CONFIG_TOUCH_NAV_BUTTONS
+// Orphan-release safety net (belt-and-suspenders; must never fire with the
+// atomic synthetic click design): on touch-nav boards NO legitimate input
+// ever holds a button, so a recognizer that stays is_button_down for this
+// long has lost its BUTTON_UP. Force-release it (clear state, cancel every
+// timer) so a stuck recognizer can never auto-repeat forever. Handlers are
+// intentionally NOT fired 30 s after the fact. Compiled out on physical
+// button boards, so legitimate hold-to-repeat there is untouched.
+#define CST816_ORPHAN_UP_TIMEOUT_MS 30000
+
+static void prv_orphan_release_callback(void *data) {
+  ClickRecognizer *recognizer = data;
+  recognizer->orphan_timer = NULL;
+  if (!recognizer->is_button_down) {
+    return;
+  }
+  PBL_LOG_WRN("Force-releasing orphaned button %d (no UP for %d ms)",
+              recognizer->button, CST816_ORPHAN_UP_TIMEOUT_MS);
+  prv_click_reset(recognizer);
+}
+#endif // CONFIG_TOUCH_NAV_BUTTONS
+
 void click_recognizer_handle_button_down(ClickRecognizer *recognizer) {
   recognizer->is_button_down = true;
+
+#if CONFIG_TOUCH_NAV_BUTTONS
+  // Arm the orphan-release net; the matching button up (for atomic synthetic
+  // clicks: later in this very same call) cancels it.
+  prv_cancel_timer(&recognizer->orphan_timer);
+  recognizer->orphan_timer = app_timer_register(
+      CST816_ORPHAN_UP_TIMEOUT_MS, prv_orphan_release_callback, recognizer);
+#endif
 
   prv_cancel_timer(&recognizer->multi_click_timer);
 
@@ -286,6 +320,11 @@ void click_recognizer_handle_button_down(ClickRecognizer *recognizer) {
 }
 
 void click_recognizer_handle_button_up(ClickRecognizer *recognizer) {
+#if CONFIG_TOUCH_NAV_BUTTONS
+  // The button is no longer held; the orphan-release net is not needed.
+  prv_cancel_timer(&recognizer->orphan_timer);
+#endif
+
   const bool needs_reset = false;
   prv_dispatch_event(recognizer, ClickHandlerOffsetRawUp, needs_reset);
 

@@ -39,9 +39,9 @@ static const uint32_t NUM_DEBOUNCE_SAMPLES = 20;
 // Single-physical-button remap (BOARD_CONFIG_BUTTON.select_short_back_long):
 // a SELECT hold of at least this long is reported as BACK; a shorter press is
 // reported as SELECT on release. 500 ms is comfortably longer than a tap yet
-// short enough to feel responsive, and well under the 1500 ms BACK-hold
-// force-quit so the synthesized BACK click (emitted once, as a down+up pair)
-// never trips it.
+// short enough to feel responsive. The synthesized BACK is one atomic click
+// (a flagged BUTTON_DOWN) and the kernel never arms the 1500 ms BACK-hold
+// force-quit for flagged clicks.
 #define SELECT_BACK_LONG_PRESS_MS 500
 #define SELECT_BACK_LONG_PRESS_SAMPLES \
     ((DEBOUNCE_SAMPLES_PER_SECOND * SELECT_BACK_LONG_PRESS_MS) / 1000)
@@ -57,10 +57,24 @@ static const uint32_t NUM_DEBOUNCE_SAMPLES = 20;
 
 static void prv_timer_handler(nrf_timer_event_t evt, void *ctx);
 
-// Emit a full press (down immediately followed by up) for a button that has no
-// dedicated GPIO — used by the single-button SELECT/BACK remap to synthesize
-// SELECT and BACK clicks. Returns whether a context switch should follow.
+// Emit a full press for a button that has no dedicated GPIO — used by the
+// single-button SELECT/BACK remap to synthesize SELECT and BACK clicks.
+// Returns whether a context switch should follow.
 static bool prv_emit_synthetic_click(ButtonId button_id) {
+#if CONFIG_TOUCH_NAV_BUTTONS
+  // One atomic discrete click: a single flagged BUTTON_DOWN. Consumers run
+  // press+release on the ClickRecognizer in the same synchronous call, so no
+  // held state exists and no separate BUTTON_UP can be dropped at a queue
+  // boundary (same contract as the touch shim in services/touch/touch.c).
+  PebbleEvent e = {
+    .type = PEBBLE_BUTTON_DOWN_EVENT,
+    .button = {
+      .button_id = button_id,
+      .is_synthetic_click = true,
+    },
+  };
+  return event_put_isr(&e);
+#else
   PebbleEvent down = {
     .type = PEBBLE_BUTTON_DOWN_EVENT,
     .button.button_id = button_id,
@@ -72,6 +86,7 @@ static bool prv_emit_synthetic_click(ButtonId button_id) {
   bool should_context_switch = event_put_isr(&down);
   should_context_switch = event_put_isr(&up) || should_context_switch;
   return should_context_switch;
+#endif
 }
 
 static void initialize_button_timer(void) {
