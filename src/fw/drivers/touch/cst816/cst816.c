@@ -91,6 +91,28 @@ PBL_LOG_MODULE_DEFINE(driver_touch_cst816, CONFIG_DRIVER_TOUCH_LOG_LEVEL);
 #define CST816_WAKE_SPACING_MS        2000
 
 #ifdef CONFIG_SOC_NRF52
+/* TEMPORARY bangle2 touch debug: ring buffer of raw CST816 events, read
+ * post-hoc over SWD. 12 bytes per entry, 256 entries (0xC00 bytes total,
+ * large enough to capture a full fragmentation burst). Remove before merge. */
+typedef struct {
+  uint32_t tick;        /* low 32 bits of rtc_get_ticks() at processing time */
+  uint8_t raw_gesture;  /* raw gesture ID register (0x01) */
+  uint8_t fingers;      /* raw finger-count register (0x02), count in low nibble */
+  uint16_t x;           /* decoded X (after axis inversion) */
+  uint16_t y;           /* decoded Y (after axis inversion) */
+  uint8_t action;       /* dispatched TouchGesture_*; 0xFE = suppressed
+                         * (lockout/debounce/reversal); 0xFF = none. Dispatch
+                         * happens in a synthetic finalize entry (fingers ==
+                         * 0xF0), not in per-frame entries. */
+  uint8_t evt;          /* bits[1:0] = XposH event type (0 Down / 1 LiftUp /
+                         * 2 Contact); 0x10 = coords rejected (LiftUp garbage
+                         * or edge blip); 0x20 = coalesced continuation;
+                         * 0xF1 = synthetic finalize entry */
+} Cst816TouchLog;
+
+static volatile Cst816TouchLog s_cst816_touchlog[256];
+static volatile uint32_t s_cst816_touchlog_count; /* total events; slot = count & 255 */
+
 /* WORKAROUND (bangle2, lierda CST816D blob): trajectory-based gesture
  * recognizer; exactly ONE gesture per finger-stroke, decided on release.
  *
@@ -534,6 +556,22 @@ static void prv_finalize_stroke(void) {
               s_stroke_code, (int)phys, lockout_hit ? " LOCKOUT" : "",
               reversal_hit ? " REVERSAL" : "");
 
+  /* TEMPORARY bangle2 touch debug: synthetic finalize entry (fingers=0xF0,
+   * evt=0xF1) carrying the dispatch decision; release point in x/y. */
+  {
+    volatile Cst816TouchLog *slot = &s_cst816_touchlog[s_cst816_touchlog_count & 255];
+    slot->tick = (uint32_t)s_release_ticks;
+    slot->raw_gesture = s_stroke_code;
+    slot->fingers = 0xF0;
+    slot->x = (uint16_t)s_last_point.x;
+    slot->y = (uint16_t)s_last_point.y;
+    /* 0xFE = suppressed (tap lockout, swipe debounce, or rule-10 reversal). */
+    slot->action = (dispatched >= 0) ? (uint8_t)dispatched
+                                     : ((lockout_hit || reversal_hit) ? 0xFE : 0xFF);
+    slot->evt = 0xF1;
+    s_cst816_touchlog_count++;
+  }
+
   /* Release point: the LAST valid Down/Contact position (rule 7) -- never a
    * LiftUp frame's garbage coordinates. */
   const GPoint release_point = s_last_point;
@@ -935,6 +973,7 @@ static void prv_process_pending_messages(void* context) {
                            (point.x < CST816_COORD_X_LIMIT);
   /* Rule 7: a LiftUp event OR fingers==0 releases the stroke. */
   const bool is_release = (press == 0) || (event == CST816_EVENT_LIFTUP);
+  bool coalesced = false;
 
   if (!is_release) {
     if (s_stroke_active && s_pending_release) {
@@ -944,6 +983,7 @@ static void prv_process_pending_messages(void* context) {
          * original down anchor and displacement history. */
         s_pending_release = false;
         new_timer_stop(s_coalesce_timer);
+        coalesced = true;
       } else {
         /* Window long past but the deferred finalize hasn't run yet (system
          * task backlog): settle the old stroke before starting the new one. */
@@ -1022,6 +1062,19 @@ static void prv_process_pending_messages(void* context) {
     s_release_generation++;
     new_timer_start(s_coalesce_timer, CST816_COALESCE_MS, prv_coalesce_timer_cb,
                     (void *)(uintptr_t)s_release_generation, 0);
+  }
+
+  /* TEMPORARY bangle2 touch debug: record every processed frame. */
+  {
+    volatile Cst816TouchLog *slot = &s_cst816_touchlog[s_cst816_touchlog_count & 255];
+    slot->tick = (uint32_t)now;
+    slot->raw_gesture = id;
+    slot->fingers = data[0];
+    slot->x = (uint16_t)point.x;
+    slot->y = (uint16_t)point.y;
+    slot->action = 0xFF; /* dispatch decisions live in finalize entries (0xF0) */
+    slot->evt = (uint8_t)(event | (coord_valid ? 0 : 0x10) | (coalesced ? 0x20 : 0));
+    s_cst816_touchlog_count++;
   }
 
   /* Feed the touch service the last GOOD position when this frame's coords
