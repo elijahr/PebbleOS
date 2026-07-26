@@ -8,7 +8,9 @@
 #include "drivers/exti.h"
 #include "drivers/gpio.h"
 #include "kernel/events.h"
+#include "pbl/services/system_task.h"
 #include "system/bootbits.h"
+#include "system/reboot_reason.h"
 #include "system/reset.h"
 #include "util/bitset.h"
 #include "kernel/util/sleep.h"
@@ -43,6 +45,15 @@ static const uint32_t NUM_DEBOUNCE_SAMPLES = 20;
 #define SELECT_BACK_LONG_PRESS_MS 500
 #define SELECT_BACK_LONG_PRESS_SAMPLES \
     ((DEBOUNCE_SAMPLES_PER_SECOND * SELECT_BACK_LONG_PRESS_MS) / 1000)
+
+// Single-physical-button boards only (select_short_back_long): holding the one
+// button for 5s triggers a clean soft reset. Needed because the RESET_BUTTONS
+// combo below (SELECT+BACK) can never fire when BACK is a phantom slot, and
+// bangle2 has no PMIC long-hold reset fallback -- without this there is no
+// on-device recovery from a wedged UI. The intermediate BACK click at 500 ms
+// still fires; the reboot supersedes it.
+#define SELECT_REBOOT_HOLD_SECONDS 5
+#define SELECT_REBOOT_HOLD_SAMPLES (SELECT_REBOOT_HOLD_SECONDS * DEBOUNCE_SAMPLES_PER_SECOND)
 
 static void prv_timer_handler(nrf_timer_event_t evt, void *ctx);
 
@@ -148,6 +159,8 @@ static void prv_timer_handler(nrf_timer_event_t evt, void *ctx) {
   // as a BACK press.
   static uint32_t s_select_hold_samples = 0;
   static bool s_select_long_fired = false;
+  // One-shot latch for the 5s-hold soft reset (single-button boards only).
+  static bool s_select_reboot_fired = false;
   const bool remap_select = BOARD_CONFIG_BUTTON.select_short_back_long;
 
   // Should we tell the scheduler to attempt to context switch after this function has completed?
@@ -213,20 +226,35 @@ static void prv_timer_handler(nrf_timer_event_t evt, void *ctx) {
   }
 
   // Single-button remap: while SELECT is held, keep the sampler alive and count
-  // toward the long-press threshold. Crossing it reports a one-shot BACK click.
+  // toward the long-press (BACK at 500 ms) and reboot (5 s) thresholds.
   if (remap_select) {
     if (bitset32_get(&s_debounced_button_state, BUTTON_ID_SELECT)) {
-      if (!s_select_long_fired) {
+      if (!s_select_reboot_fired) {
         can_power_down_tim4 = false;  // keep sampling so the hold can be timed
         s_select_hold_samples += 1;
-        if (s_select_hold_samples >= SELECT_BACK_LONG_PRESS_SAMPLES) {
+        if (!s_select_long_fired &&
+            (s_select_hold_samples >= SELECT_BACK_LONG_PRESS_SAMPLES)) {
           s_select_long_fired = true;
           should_context_switch = prv_emit_synthetic_click(BUTTON_ID_BACK) ||
                                   should_context_switch;
         }
+        if (s_select_hold_samples >= SELECT_REBOOT_HOLD_SAMPLES) {
+          // 5s continuous hold: clean soft reset. Record the reason first, then
+          // run system_reset() from the system task (not this ISR) so services
+          // shut down gracefully (system_reset_prepare + restarted-safely).
+          s_select_reboot_fired = true;
+          RebootReason reason = {
+            .code = RebootReasonCode_ResetButtonsHeld,
+          };
+          reboot_reason_set(&reason);
+          bool cs = false;
+          system_task_add_callback_from_isr(system_reset_callback, NULL, &cs);
+          should_context_switch = cs || should_context_switch;
+        }
       }
     } else {
       s_select_hold_samples = 0;
+      s_select_reboot_fired = false;
     }
   }
 
