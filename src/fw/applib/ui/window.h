@@ -403,8 +403,10 @@ void window_detach_recognizer(Window *window, Recognizer *recognizer);
 //! @return recognizer list
 RecognizerList *window_get_recognizer_list(Window *window);
 
-//! Get the recognizer manager that manages recognizers attached to this window and all layers
-//! attached to the window
+//! Get the recognizer manager for the calling task. The manager is currently per-task, not
+//! per-window: the window parameter is unused (kept for planned per-window/modal dispatch).
+//! @param window \ref Window (currently ignored)
+//! @return the app task's recognizer manager, or NULL on other tasks
 RecognizerManager *window_get_recognizer_manager(Window *window);
 
 //!   @} // end addtogroup Window

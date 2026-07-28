@@ -14,6 +14,7 @@
 #include "applib/ui/window_stack.h"
 #include "applib/applib_malloc.auto.h"
 #include "applib/legacy2/ui/status_bar_legacy2.h"
+#include "kernel/pebble_tasks.h"
 #include "kernel/ui/kernel_ui.h"
 #include "kernel/ui/modals/modal_manager.h"
 #include "process_management/process_manager.h"
@@ -562,7 +563,18 @@ RecognizerList *window_get_recognizer_list(Window *window) {
 }
 
 RecognizerManager *window_get_recognizer_manager(Window *window) {
-  // TODO return the app's recognizer manager
-  // https://pebbletechnology.atlassian.net/browse/PBL-30957
+#ifdef CONFIG_TOUCH
+  // The manager is per-task, not per-window: the window parameter is unused in stage 1
+  switch (pebble_task_get_current()) {
+    case PebbleTask_App:
+      return app_state_get_recognizer_manager();
+    case PebbleTask_KernelMain:
+      // Stage 1: no kernel recognizer manager; modal attaches are inert
+      return NULL;
+    default:
+      return NULL;
+  }
+#else
   return NULL;
+#endif
 }

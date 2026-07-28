@@ -580,9 +580,19 @@ void layer_attach_recognizer(Layer *layer, Recognizer *recognizer) {
   if (!layer || !recognizer) {
     return;
   }
-  recognizer_manager_register_recognizer(window_get_recognizer_manager(layer_get_window(layer)),
-                                         recognizer);
+  RecognizerManager *manager = window_get_recognizer_manager(layer_get_window(layer));
+  if (manager) {
+    recognizer_manager_register_recognizer(manager, recognizer);
+  }
+  // Always list the recognizer: the layer list is the ownership root; layer_deinit reclaims
+  // it, so a manager-less attach stays inert but never leaks.
+  // Count ownership transitions, not calls: recognizer_add_to_list early-returns when the
+  // recognizer is already owned, and a double-attach must not drift the counter
+  const bool was_owned = recognizer_is_owned(recognizer);
   recognizer_add_to_list(recognizer, &layer->recognizer_list);
+  if (!was_owned && recognizer_is_owned(recognizer)) {
+    app_state_recognizer_attach_count_inc();
+  }
 #endif
 }
 
@@ -591,9 +601,17 @@ void layer_detach_recognizer(Layer *layer, Recognizer *recognizer) {
   if (!layer || !recognizer) {
     return;
   }
+  // Count ownership transitions, not calls: recognizer_remove_from_list early-returns when
+  // the recognizer is not owned, and detaching a never-attached recognizer must not decrement
+  const bool was_owned = recognizer_is_owned(recognizer);
   recognizer_remove_from_list(recognizer, &layer->recognizer_list);
-  recognizer_manager_deregister_recognizer(window_get_recognizer_manager(layer_get_window(layer)),
-                                           recognizer);
+  RecognizerManager *manager = window_get_recognizer_manager(layer_get_window(layer));
+  if (manager) {
+    recognizer_manager_deregister_recognizer(manager, recognizer);
+  }
+  if (was_owned && !recognizer_is_owned(recognizer)) {
+    app_state_recognizer_attach_count_dec();
+  }
 #endif
 }
 

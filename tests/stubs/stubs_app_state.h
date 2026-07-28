@@ -160,3 +160,19 @@ FrameBuffer *s_app_state_framebuffer;
 FrameBuffer * WEAK app_state_get_framebuffer(void) {
   return s_app_state_framebuffer;
 }
+
+#ifdef CONFIG_TOUCH
+uint16_t s_stub_app_state_recognizer_attach_count;
+
+void WEAK app_state_recognizer_attach_count_inc(void) {
+  s_stub_app_state_recognizer_attach_count++;
+}
+
+void WEAK app_state_recognizer_attach_count_dec(void) {
+  s_stub_app_state_recognizer_attach_count--;
+}
+
+uint16_t WEAK app_state_recognizer_attach_count(void) {
+  return s_stub_app_state_recognizer_attach_count;
+}
+#endif

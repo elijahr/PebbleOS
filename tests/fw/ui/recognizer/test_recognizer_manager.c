@@ -1025,3 +1025,124 @@ void test_recognizer_manager__handle_state_change(void) {
   cl_assert_equal_i(r[0]->state, RecognizerState_Started);
   cl_assert_equal_i(r[1]->state, RecognizerState_Completed);
 }
+
+void test_recognizer_manager__attach_with_null_manager_is_inert_and_owned(void) {
+  s_stub_app_state_recognizer_attach_count = 0;
+  bool destroyed = false;
+  s_test_impl_data.destroyed = &destroyed;
+  Recognizer *r = test_recognizer_create(&s_test_impl_data, NULL);
+  test_recognizer_enable_on_destroy();
+
+  Window window = {};
+  layer_init(&window.layer, &GRectZero);
+  // s_manager stays NULL (initialize): no recognizer manager is reachable
+
+  Layer layer_a;
+  layer_init(&layer_a, &GRectZero);
+  layer_add_child(&window.layer, &layer_a);
+
+  // Attach must not assert: register is skipped, but the layer list still owns
+  // the recognizer so it stays reclaimable
+  layer_attach_recognizer(&layer_a, r);
+  cl_assert(recognizer_is_owned(r));
+  cl_assert_equal_p(recognizer_get_manager(r), NULL);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 1);
+
+  // The layer list is the ownership root: deinit reclaims the inert recognizer
+  layer_deinit(&layer_a);
+  cl_assert_equal_b(destroyed, true);
+  cl_assert_equal_p(layer_a.recognizer_list.node, NULL);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 0);
+}
+
+void test_recognizer_manager__detach_with_null_manager_no_assert(void) {
+  s_stub_app_state_recognizer_attach_count = 0;
+  bool destroyed = false;
+  s_test_impl_data.destroyed = &destroyed;
+  Recognizer *r = test_recognizer_create(&s_test_impl_data, NULL);
+  test_recognizer_enable_on_destroy();
+
+  Window window = {};
+  layer_init(&window.layer, &GRectZero);
+  // s_manager stays NULL (initialize): no recognizer manager is reachable
+
+  Layer layer_a;
+  layer_init(&layer_a, &GRectZero);
+  layer_add_child(&window.layer, &layer_a);
+
+  layer_attach_recognizer(&layer_a, r);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 1);
+
+  // Detach must not assert on the NULL manager (deregister is skipped)
+  layer_detach_recognizer(&layer_a, r);
+  cl_assert(!recognizer_is_owned(r));
+  cl_assert_equal_p(layer_a.recognizer_list.node, NULL);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 0);
+
+  recognizer_destroy(r);
+  cl_assert_equal_b(destroyed, true);
+}
+
+void test_recognizer_manager__double_attach_does_not_double_count(void) {
+  s_stub_app_state_recognizer_attach_count = 0;
+  bool destroyed = false;
+  s_test_impl_data.destroyed = &destroyed;
+  Recognizer *r = test_recognizer_create(&s_test_impl_data, NULL);
+  test_recognizer_enable_on_destroy();
+
+  Window window = {};
+  layer_init(&window.layer, &GRectZero);
+  // s_manager stays NULL (initialize): no recognizer manager is reachable
+
+  Layer layer_a;
+  layer_init(&layer_a, &GRectZero);
+  layer_add_child(&window.layer, &layer_a);
+  Layer layer_b;
+  layer_init(&layer_b, &GRectZero);
+  layer_add_child(&window.layer, &layer_b);
+
+  layer_attach_recognizer(&layer_a, r);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 1);
+
+  // Second attach is an ownership no-op (recognizer_add_to_list early-returns on
+  // is_owned): the counter must not drift to 2 with only one listed recognizer
+  layer_attach_recognizer(&layer_b, r);
+  cl_assert(recognizer_is_owned(r));
+  cl_assert_equal_p(layer_b.recognizer_list.node, NULL);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 1);
+
+  // Deinit of the owning layer releases the one real attachment: count returns to
+  // zero, not stuck at 1
+  layer_deinit(&layer_a);
+  cl_assert_equal_b(destroyed, true);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 0);
+
+  layer_deinit(&layer_b);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 0);
+}
+
+void test_recognizer_manager__detach_never_attached_does_not_decrement(void) {
+  s_stub_app_state_recognizer_attach_count = 0;
+  bool destroyed = false;
+  s_test_impl_data.destroyed = &destroyed;
+  Recognizer *r = test_recognizer_create(&s_test_impl_data, NULL);
+  test_recognizer_enable_on_destroy();
+
+  Window window = {};
+  layer_init(&window.layer, &GRectZero);
+  // s_manager stays NULL (initialize): no recognizer manager is reachable
+
+  Layer layer_a;
+  layer_init(&layer_a, &GRectZero);
+  layer_add_child(&window.layer, &layer_a);
+
+  // Detach of a never-attached recognizer is an ownership no-op
+  // (recognizer_remove_from_list early-returns on !is_owned): the counter must
+  // not decrement below the number of real attachments
+  layer_detach_recognizer(&layer_a, r);
+  cl_assert(!recognizer_is_owned(r));
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 0);
+
+  recognizer_destroy(r);
+  cl_assert_equal_b(destroyed, true);
+}
