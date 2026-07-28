@@ -13,10 +13,22 @@
 
 #include <stdint.h>
 
-// Known parts. GD25Q64 (C8 40 17) is industry-standard-confirmed. XT25F64B
-// manufacturer byte 0x0B is CONFIRMED against flashrom's flashchips.h
-// (XTX_ID = 0x0B, XT25F64B model id 0x4017). The "Gordon hardware-corrected"
-// attribution stays INFERRED (not verifiable locally).
+// Known parts. GD25Q64 (C8 40 17) is industry-standard-confirmed, and the
+// GigaDevice part is what Espruino documents for this board: EspruinoDocs
+// info/Bangle.js2 Technical.md gives "8MB external flash (GD25Q64C/GD25Q64E)"
+// with datasheet links (verified 2026-07-28). Both revisions share this JEDEC
+// id, so the single constant covers them. NOTE that the Espruino board file
+// boards/BANGLEJS2.py names NO manufacturer -- it defines only the pins, the
+// 8 MB size, and memmap_base 0x60000000, which its own comment marks as a
+// mapping done "in software". That address is an Espruino addressing
+// convention, NOT an nRF52840 XIP window (the nRF52840 QSPI XIP region is
+// 0x12000000, and this board does not use QSPI at all -- see spi_nor.c).
+// XT25F64B manufacturer byte 0x0B is CONFIRMED against flashrom's
+// flashchips.h (XTX_ID = 0x0B, XT25F64B model id 0x4017). The "Gordon
+// hardware-corrected" attribution stays INFERRED (not verifiable locally):
+// the Espruino docs name only the GigaDevice parts, so XT25F64B is kept as a
+// defensive accepted id rather than a documented one. Only an RDID read off
+// the unit itself settles which part is present.
 #define BANGLE2_FLASH_JEDEC_GD25Q64 0x001740C8UL
 #define BANGLE2_FLASH_JEDEC_XT25F64B 0x0017400BUL
 // Third RDID byte 0x17 = 2^23 bytes = 8 MB, the load-bearing capacity guard.
