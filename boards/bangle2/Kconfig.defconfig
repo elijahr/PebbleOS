@@ -2,7 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The recovery firmware shares the 1 MiB flash bank with the normal
-# firmware and is linked in the upper half.
+# firmware. It is NOT linked in the upper half -- this symbol only shrinks
+# the slot LENGTH to 512K. Both variants link at the SAME origin, because
+# memory.ld:35 derives ORIGIN from FLASH_BASE + FLASH_OFFSET +
+# FIRMWARE_OFFSET, none of which vary by variant. A recovery image is
+# therefore a drop-in replacement for the normal image at the same address,
+# which is what lets a bootloader copy it from external SAFE_FIRMWARE into
+# the normal firmware slot and run it there. See
+# plans/2026-07-28-bangle2-r10-bootloader-design.md section 2 for why the
+# copy is destructive: 32K bootloader + 836K normal + 512K PRF is 1380K
+# into a 1024K part, so a second resident slot does not fit.
 config FW_FLASH_SIZE
     default 0x80000 if RECOVERY_FW && !MFG
     default 0xD1000
