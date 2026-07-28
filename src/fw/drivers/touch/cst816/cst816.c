@@ -90,6 +90,13 @@ PBL_LOG_MODULE_DEFINE(driver_touch_cst816, CONFIG_DRIVER_TOUCH_LOG_LEVEL);
  * previous one therefore marks a fresh sleep->awake transition. */
 #define CST816_WAKE_SPACING_MS        2000
 
+#ifdef CONFIG_BOARD_BANGLE2
+/* Shared de-shear core + chip->framebuffer mapping. Bangle2-specific: the
+ * affine was measured on a bangle2 unit and consumes bangle2's letterbox
+ * geometry, so it must never be inherited by another nRF52 board. */
+#include "drivers/touch/cst816/cst816_transform.h"
+#endif
+
 #ifdef CONFIG_SOC_NRF52
 /* TEMPORARY bangle2 touch debug: ring buffer of raw CST816 events, read
  * post-hoc over SWD. 12 bytes per entry, 256 entries (0xC00 bytes total,
@@ -318,6 +325,11 @@ static GPoint s_down_point;          /* first NON-edge-clamped point */
 static RtcTicks s_down_ticks;        /* ticks at s_down_point */
 static RtcTicks s_start_ticks;       /* ticks at the stroke's first frame */
 static GPoint s_last_point;          /* last point seen with fingers >= 1 */
+static GPoint s_last_unclamped_point; /* last NON-edge-clamped point; feeds the
+                                       * coordinate path when a mid-stroke frame
+                                       * is pinned at an x clamp; only read while
+                                       * s_down_captured is set, which guarantees
+                                       * a same-stroke write preceded the read */
 static uint16_t s_frame_count;       /* frames seen this stroke */
 static int32_t s_max_disp;           /* running max |dx|+|dy| from down point */
 static int16_t s_max_dx;             /* dx at max displacement */
@@ -361,6 +373,7 @@ static void prv_stroke_reset(void) {
   s_stroke_active = false;
   s_pending_release = false;
   s_down_captured = false;
+  s_last_unclamped_point = GPointZero;
   s_frame_count = 0;
   s_max_disp = 0;
   s_max_dx = 0;
@@ -400,8 +413,8 @@ static void prv_stroke_reset(void) {
  * classify horizontal; EVERYTHING else is vertical. This is a de-shear,
  * NOT an axis swap or rotation. */
 static Cst816Phys prv_phys_from_deshear(int32_t dx, int32_t dy) {
-  const int32_t px = 87 * dx - 230 * dy;   /* phys_x * det (det = -29375) */
-  const int32_t py = -88 * dx - 105 * dy;  /* phys_y * det */
+  const int32_t px = cst816_deshear_px(dx, dy); /* phys_x * det (det = -29375) */
+  const int32_t py = cst816_deshear_py(dx, dy); /* phys_y * det */
   const int32_t apx = ABS(px);
   const int32_t apy = ABS(py);
 
@@ -574,7 +587,13 @@ static void prv_finalize_stroke(void) {
 
   /* Release point: the LAST valid Down/Contact position (rule 7) -- never a
    * LiftUp frame's garbage coordinates. */
-  const GPoint release_point = s_last_point;
+  GPoint release_point = s_last_point;
+#ifdef CONFIG_BOARD_BANGLE2
+  /* Chip -> framebuffer space, same mapping as the update path, so both touch
+   * service entry points deliver framebuffer coordinates. */
+  release_point = GPoint(cst816_transform_fb_x(release_point.x, release_point.y),
+                         cst816_transform_fb_y(release_point.x, release_point.y));
+#endif
 
   prv_stroke_reset();
 
@@ -924,6 +943,7 @@ static void prv_process_pending_messages(void* context) {
 #ifdef CONFIG_SOC_NRF52
     prv_stroke_reset();
 #endif
+    /* (0,0) is an error-path sentinel, not a framebuffer position. */
     touch_handle_update(TouchState_FingerUp, 0, 0);
     exti_disable(CST816->int_exti);
     touch_sensor_set_enabled(true);
@@ -937,6 +957,7 @@ static void prv_process_pending_messages(void* context) {
 #ifdef CONFIG_SOC_NRF52
     prv_stroke_reset();
 #endif
+    /* (0,0) is an error-path sentinel, not a framebuffer position. */
     touch_handle_update(TouchState_FingerUp, 0, 0);
     exti_disable(CST816->int_exti);
     touch_sensor_set_enabled(true);
@@ -1023,6 +1044,7 @@ static void prv_process_pending_messages(void* context) {
                              (point.x >= CST816_EDGE_CLAMP_X_HI);
       if (!x_clamped) {
         s_all_frames_clamped = false;
+        s_last_unclamped_point = point;
         if (!s_down_captured) {
           /* Rule 1: anchor at the first NON-edge-clamped frame, skipping the
            * 2-4 pinned frames seen when the finger enters from the bezel. */
@@ -1079,7 +1101,23 @@ static void prv_process_pending_messages(void* context) {
 
   /* Feed the touch service the last GOOD position when this frame's coords
    * are corrupt (LiftUp garbage / edge blip); wiring in touch.c unchanged. */
-  const GPoint report_point = coord_valid ? point : s_last_point;
+  GPoint report_point = coord_valid ? point : s_last_point;
+  /* Leading-clamped-frame policy: a MID-stroke frame pinned at an x clamp
+   * carries no position; substitute the last non-edge-clamped point. A
+   * LEADING clamped frame (no down anchor yet) transforms its clamped
+   * coordinate as-is -- blind substitution would hit-test at the PREVIOUS
+   * stroke's endpoint (s_last_point survives prv_stroke_reset, and 7/14
+   * measured strokes begin clamped). */
+  if (((report_point.x <= CST816_EDGE_CLAMP_X_LO) || (report_point.x >= CST816_EDGE_CLAMP_X_HI)) &&
+      s_down_captured) {
+    report_point = s_last_unclamped_point;
+  }
+#ifdef CONFIG_BOARD_BANGLE2
+  /* Chip -> framebuffer space (shared de-shear core + letterbox reversal);
+   * gesture classification above stays in chip units. */
+  report_point = GPoint(cst816_transform_fb_x(report_point.x, report_point.y),
+                        cst816_transform_fb_y(report_point.x, report_point.y));
+#endif
   if ((press == 0x01) && (event != CST816_EVENT_LIFTUP)) {
     touch_handle_update(TouchState_FingerDown, report_point.x, report_point.y);
   } else {
