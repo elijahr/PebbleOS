@@ -72,6 +72,8 @@ typedef struct MemorySegment MemorySegment;
 typedef struct JsRuntimeContext JsRuntimeContext;
 typedef struct JsMemoryAPIContext JsMemoryAPIContext;
 
+typedef struct TouchClickSuppressState TouchClickSuppressState;
+
 //! Allocate memory in the process' address space for AppState data and
 //! perform initial configuration.
 bool app_state_configure(MemorySegment *app_state_ram,
@@ -140,6 +142,10 @@ RecognizerManager *app_state_get_recognizer_manager(void);
 void app_state_recognizer_attach_count_inc(void);
 void app_state_recognizer_attach_count_dec(void);
 uint16_t app_state_recognizer_attach_count(void);
+
+#if CONFIG_TOUCH_NAV_BUTTONS
+TouchClickSuppressState *app_state_get_touch_click_suppress_state(void);
+#endif
 
 JsRuntimeContext *app_state_get_js_runtime_context(void);
 

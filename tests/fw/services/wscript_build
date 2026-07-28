@@ -470,6 +470,12 @@ clar(ctx,
     test_sources_ant_glob = "test_touch.c")
 
 clar(ctx,
+    sources_ant_glob = "src/fw/services/touch/touch_click_suppress.c" \
+        " tests/fakes/fake_rtc.c",
+    test_sources_ant_glob = "test_touch_click_suppress.c",
+    defines=['CONFIG_TOUCH', 'CONFIG_TOUCH_NAV_BUTTONS=1'])
+
+clar(ctx,
     sources_ant_glob = \
         "src/fw/services/hrm/hrm_manager.c " \
         "lib/os/tick.c " \
