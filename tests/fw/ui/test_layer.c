@@ -438,7 +438,67 @@ void test_layer__find_layer_contains_point(void) {
   layer_add_child(&child_c, &child_e);
   cl_assert_equal_p(layer_find_layer_containing_point(&parent, &GPoint(9, 9)), &child_a);
   cl_assert_equal_p(layer_find_layer_containing_point(&parent, &GPoint(6, 6)), &child_d);
-  cl_assert_equal_p(layer_find_layer_containing_point(&parent, &GPoint(15, 15)), &child_e);
+  // This assertion previously expected &child_e, which asserted that a touch resolves to a layer
+  // the renderer never draws under that point. child_e's frame origin (10,10) is relative to
+  // child_c, whose own frame origin is (10,10), so layer_render_tree() draws child_e at global
+  // (20,20) -- entirely outside the 20x20 clipping parent. child_e is not visible anywhere on
+  // this tree, least of all at (15,15). The old expectation was only satisfiable because the
+  // traversal failed to rebase by child_c's frame origin on descent; it encoded the defect, not a
+  // contract. With the descent corrected, (15,15) lands inside child_c and finds no visible child
+  // there, so child_c is the answer. See the coordinate contract in layer.c.
+  cl_assert_equal_p(layer_find_layer_containing_point(&parent, &GPoint(15, 15)), &child_c);
+}
+
+// A nested layer must be found at the point where it is actually DRAWN, i.e. after composing every
+// ancestor's frame origin. Discriminating: without the frame.origin term in the descent this
+// resolves to &mid instead of &leaf.
+void test_layer__find_layer_contains_point_nonzero_ancestor_origin(void) {
+  Layer parent, mid, leaf;
+  Layer *layers[] = {&parent, &mid, &leaf};
+  for (int i = 0; i < ARRAY_LENGTH(layers); ++i) {
+    layer_init(layers[i], &GRectZero);
+  }
+  layer_set_frame(&parent, &GRect(0, 0, 40, 40));
+  layer_set_frame(&mid, &GRect(10, 10, 20, 20));
+  layer_set_frame(&leaf, &GRect(5, 5, 10, 10));
+  layer_add_child(&parent, &mid);
+  layer_add_child(&mid, &leaf);
+
+  // leaf is drawn at global (15,15)-(25,25): mid's origin (10,10) plus leaf's own (5,5).
+  cl_assert_equal_p(layer_find_layer_containing_point(&parent, &GPoint(18, 18)), &leaf);
+  // Inside mid but before leaf starts.
+  cl_assert_equal_p(layer_find_layer_containing_point(&parent, &GPoint(12, 12)), &mid);
+  // Inside mid but past leaf's far edge.
+  cl_assert_equal_p(layer_find_layer_containing_point(&parent, &GPoint(28, 28)), &mid);
+}
+
+// A window-stack transition slides a window by writing a nonzero frame origin on the ROOT layer
+// (window_stack_animation_rect.c prv_window_frame_setter, window_stack_animation_round.c). Touch
+// events are not gated on window_stack_is_animating, so hit-testing runs while the root origin is
+// mid-interpolation. The root is rebased by the same rule as any other node -- there is no special
+// case for it.
+void test_layer__find_layer_contains_point_nonzero_root_origin(void) {
+  Layer root, child;
+  Layer *layers[] = {&root, &child};
+  for (int i = 0; i < ARRAY_LENGTH(layers); ++i) {
+    layer_init(layers[i], &GRectZero);
+  }
+  // Window slid 20px to the right, part-way through a transition.
+  layer_set_frame(&root, &GRect(20, 0, 144, 168));
+  layer_set_frame(&child, &GRect(0, 0, 40, 40));
+  layer_add_child(&root, &child);
+
+  // The child occupies window-local x [0,40), which is screen x [20,60) once the root is slid.
+  // Discriminating: screen x=50 is window-local x=30, inside the child. Without the root rebase
+  // the traversal tests the raw screen x=50 against the child's [0,40) frame, misses, and answers
+  // &root instead.
+  cl_assert_equal_p(layer_find_layer_containing_point(&root, &GPoint(50, 5)), &child);
+  // 5px inside the slid window, so 5px into the child.
+  cl_assert_equal_p(layer_find_layer_containing_point(&root, &GPoint(25, 5)), &child);
+  // Left of the slid window entirely.
+  cl_assert_equal_p(layer_find_layer_containing_point(&root, &GPoint(15, 5)), NULL);
+  // Window-local x=45, past the 40px-wide child.
+  cl_assert_equal_p(layer_find_layer_containing_point(&root, &GPoint(65, 5)), &root);
 }
 
 static bool prv_override_layer_contains_point(const Layer *layer, const GPoint *point) {

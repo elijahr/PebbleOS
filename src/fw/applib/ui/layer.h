@@ -70,9 +70,11 @@ typedef void (*PropertyChangedProc)(struct Layer *layer);
 //! Layer contains point override function. This can replace the default implementation of
 //! \ref layer_contains_point using the \ref layer_set_contains_point_override call. The override
 //! function should return true if the point should be deemed within the layer and false if not.
-//! The point is relative to the frame origin of the layer
+//! The point is in the layer's PARENT's drawing space, i.e. the same space the layer's own frame
+//! is expressed in -- it is NOT relative to the layer's frame origin. An override that wants
+//! layer-local coordinates must subtract layer->frame.origin itself.
 //! @param layer affected layer
-//! @param point point relative to the frame origin of the layer
+//! @param point point in the same coordinate space as \a layer's frame
 //! @return true if point should be considered to be contained within the layer
 typedef bool (*LayerContainsPointOverride)(const struct Layer *layer, const GPoint *point);
 
@@ -352,12 +354,13 @@ void layer_get_global_frame(const Layer *layer, GRect *global_frame_out);
 GRect layer_get_unobstructed_bounds_by_value(const Layer *layer);
 void layer_get_unobstructed_bounds(const Layer *layer, GRect *bounds_out);
 
-//! Return whether a point is contained within the bounds of a layer. Can be overridden by
+//! Return whether a point is contained within a layer. Can be overridden by
 //! \ref layer_set_contains_point_override. Default behavior is to check that the point is within
-//! layer's bounds.
+//! the layer's frame.
 //! @param layer layer to be tested
-//! @param point point relative to the frame origin of the layer
-//! @return true if the point is contained within the bounds of the layer
+//! @param point point in the same coordinate space as \a layer's frame (that is, the drawing
+//!   space of \a layer's parent), NOT relative to the layer's own frame origin
+//! @return true if the point is contained within the layer's frame
 bool layer_contains_point(const Layer *layer, const GPoint *point);
 
 //! Override the function layer_contains_point with a custom function

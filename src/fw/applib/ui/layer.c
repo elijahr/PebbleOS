@@ -543,6 +543,21 @@ typedef struct LayerContainsPointIterCtx {
 //   - does not have any children that also contain the point
 // This function returns true to indicate that the search should continue, and false to indicate
 // that a layer has been found and that the search should stop
+//
+// COORDINATE CONTRACT: iter_ctx->pos is always expressed in the coordinate space that the current
+// node's frame is expressed in, i.e. the drawing space of the node's parent. Descending into a
+// node therefore has to rebase the point into that node's own drawing space, which is offset by
+// frame.origin (where the node sits in its parent) plus bounds.origin (the node's own content
+// scroll). That composition is dictated by layer_render_tree(), which translates drawing_box by
+// exactly frame.origin + bounds.origin per level -- hit-testing has to agree with rendering, or a
+// touch resolves to a layer that is not drawn under the finger.
+//
+// This applies uniformly, including at the root: layer_render_tree() applies the root's own
+// frame.origin at level 0 (it is how window-stack transitions slide a window across the screen),
+// so a root with a nonzero frame origin must be rebased like any other node. There is deliberately
+// no special case for it. Note that layer_convert_point_to_screen() does NOT compose the root's
+// frame/bounds -- it answers a different question (window-space, not screen-space) and must not be
+// used as the model for this traversal.
 static bool prv_find_layer_containing_point(const Layer *node, LayerTouchIteratorCtx *iter_ctx) {
   while (node) {
     if (layer_contains_point(node, &iter_ctx->pos)) {
@@ -551,11 +566,12 @@ static bool prv_find_layer_containing_point(const Layer *node, LayerTouchIterato
         return false;
       }
 
-      iter_ctx->pos = gpoint_sub(iter_ctx->pos, node->bounds.origin);
+      const GPoint descent_offset = gpoint_add(node->frame.origin, node->bounds.origin);
+      iter_ctx->pos = gpoint_sub(iter_ctx->pos, descent_offset);
       if (!prv_find_layer_containing_point(node->first_child, iter_ctx)) {
         return false;
       };
-      iter_ctx->pos = gpoint_add(iter_ctx->pos, node->bounds.origin);
+      iter_ctx->pos = gpoint_add(iter_ctx->pos, descent_offset);
     }
 
     node = node->next_sibling;
@@ -570,7 +586,13 @@ MOCKABLE Layer *layer_find_layer_containing_point(const Layer *node, const GPoin
   LayerTouchIteratorCtx iter_ctx = {
     .pos = *point,
   };
-  gpoint_sub(iter_ctx.pos, node->frame.origin);
+  // NOTE: this used to read `gpoint_sub(iter_ctx.pos, node->frame.origin);` -- a discarded return
+  // from a pure function, so a no-op, unchanged since the original import. Rebasing here would be
+  // wrong even if it were assigned: the traversal's first act is to test the point against
+  // node->frame, which is expressed in the space the caller passed in. Pre-subtracting the root's
+  // own origin makes that test miss, and a touch visibly inside a slid window resolves to NULL.
+  // A root with a nonzero frame origin is handled by the descent in
+  // prv_find_layer_containing_point(); see the coordinate contract documented there.
   prv_find_layer_containing_point(node, &iter_ctx);
   return (Layer *)iter_ctx.layer;
 }
