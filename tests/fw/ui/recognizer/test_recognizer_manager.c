@@ -800,6 +800,70 @@ void test_recognizer_manager__handle_touch_event(void) {
   prv_destroy_recognizers(recognizers, k_rec_count);
 }
 
+// A window-stack transition slides a window by writing a nonzero frame origin on the ROOT layer
+// (window_stack_animation_rect.c prv_window_frame_setter interpolates it across the slide;
+// window_stack_animation_round.c writes it directly). Touch events are NOT gated on
+// window_stack_is_animating -- the two gates on the button path both sit inside
+// launcher_handle_button_event, which the touch path never reaches -- so the manager really does
+// resolve touchdowns while the root origin is mid-interpolation.
+//
+// This matters more than a single mis-hit: recognizer_manager_handle_touch_event latches
+// active_layer once, on Touchdown, and holds it for the remainder of the stroke. A wrong tree walk
+// here misroutes every subsequent event in the drag.
+//
+// ROOT_FRAME above has origin (0,0) and LAYER_A_FRAME is at (0,0) too, so no other case in this
+// suite exercises the root rebase. This one uses its own frame rather than changing the shared
+// macro, which would perturb every other case here.
+#define SLID_ROOT_FRAME GRect(20, 0, 144, 168)
+
+void test_recognizer_manager__handle_touch_event_with_slid_root(void) {
+  const int k_rec_count = 2;
+  s_dummy_impl.handle_touch_event = prv_handle_touch_event_test;
+  s_dummy_impl.reset = prv_reset_test;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  RecognizerList app_list = {};
+  s_app_list = &app_list;
+
+  Window window = {};
+  layer_init(&window.layer, &SLID_ROOT_FRAME);
+  Layer *root = &window.layer;
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  manager.window = &window;
+
+  Layer layer_a, layer_c;
+  layer_init(&layer_a, &LAYER_A_FRAME);   // (0,0,50,50), window-local
+  layer_init(&layer_c, &LAYER_C_FRAME);   // (10,10,20,20), nested inside layer_a
+  layer_add_child(root, &layer_a);
+  layer_add_child(&layer_a, &layer_c);
+
+  recognizer_add_to_list(recognizers[0], &layer_a.recognizer_list);
+  recognizer_add_to_list(recognizers[1], &layer_c.recognizer_list);
+
+  // layer_c occupies window-local (10,10)-(30,30), which is screen (30,10)-(50,30) once the root
+  // is slid 20px right. Discriminating: screen (35,15) is window-local (15,15), inside layer_c.
+  // Without the root rebase the traversal tests the raw screen x=35 against layer_c's [10,30)
+  // frame, misses, and latches layer_a for the whole stroke instead.
+  TouchEvent e = { .type = TouchEvent_Touchdown };
+  prv_set_touch_pos(&e, GPoint(35, 15));
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_p(manager.active_layer, &layer_c);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_RecognizersActive);
+
+  // Screen x=25 is window-local x=5: inside layer_a, before layer_c starts.
+  prv_set_touch_pos(&e, GPoint(25, 15));
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_p(manager.active_layer, &layer_a);
+
+  // Screen x=15 is left of the slid window entirely: no layer, so the manager reports none.
+  prv_set_touch_pos(&e, GPoint(15, 15));
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_p(manager.active_layer, NULL);
+
+  prv_destroy_recognizers(recognizers, k_rec_count);
+}
+
 void test_recognizer_manager__ownership_survives_reset_and_teardown(void) {
   bool destroyed = false;
   bool updated = false;
