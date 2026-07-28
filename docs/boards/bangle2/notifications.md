@@ -7,6 +7,12 @@ Status on 2026-07-28: notifications work. The watch shows a banner. The watch
 shows the item in the Notifications list. The phone app is the official Core
 Devices app. No change to firmware source was necessary.
 
+The durable correction is complete. The watch has a real PRF image in the safe
+firmware region. The watch reports a correct recovery firmware version. The
+phone app classifies the watch correctly without help. The debug settings in
+the phone app are no longer necessary. For the procedure and the results, see
+"The durable correction".
+
 ## Summary of the cause
 
 The phone app put no notification on the wire. The app received each
@@ -48,7 +54,12 @@ Watch side:
 - The Bangle.js 2 has no PRF image in that region. Therefore the metadata is
   not valid, and the phone reads a null version.
 
-## How to make notifications work now
+## Temporary correction with a phone setting
+
+Do not use this procedure for the Bangle.js 2 on this bench. The durable
+correction is complete, and this procedure is no longer necessary. This record
+stays for two reasons. Use it for a different watch that has no PRF image. Use
+it also to understand the cause.
 
 Do these steps on the phone. No change to firmware is necessary.
 
@@ -123,6 +134,9 @@ Do not spend time on these causes again. Each one has evidence against it.
 
 ## The durable correction
 
+This procedure was done on 2026-07-28. It was successful. The results are at
+the end of this section.
+
 The phone setting is a correction for one device. To remove the need for the
 setting, put a real PRF image in the safe firmware region.
 
@@ -190,6 +204,17 @@ The watch then does these steps:
 `CONFIG_SERVICE_PRF_UPDATE=y` is in the build that is on the watch. Therefore
 the watch has this path already.
 
+The function `check_prf_update` is called at `src/fw/main.c:364`. No condition
+controls this call. The function `prv_do_update` has only the condition
+`#ifndef CONFIG_RECOVERY_FW`. The build on the watch is not a recovery build.
+Therefore the copy path is in the build.
+
+`CONFIG_PRF_UNAVAILABLE` is `y` for this board. The name of this symbol is a
+trap. Read the help text with care. The symbol prevents a reset INTO the PRF.
+The symbol does not prevent the receipt or the installation of a PRF image.
+The only use of the symbol is at `src/fw/resource/system_resource.c:28`. There
+is no use of the symbol in `prf_update`.
+
 ### Cautions for this procedure
 
 - An update of the recovery firmware alone does not make the watch restart.
@@ -198,10 +223,81 @@ the watch has this path already.
   do not keep their contents through a loss of power. Do not let the battery
   become empty between the transfer and the reset.
 - The variant `prf` has no test in CI for this board. The workflow
-  `build-prf.yml` includes only asterix, obelix, and getafix. Therefore the
-  link step is the first test since the start of the port.
+  `build-prf.yml` includes only asterix, obelix, and getafix. The link step of
+  2026-07-28 was the first test since the start of the port. It was successful.
 - If the image is not correct, `prf_update` makes a record of a warning and
   does not copy. The recovery firmware version stays null. No damage occurs.
+- The watch can stop the BLE link some seconds after the INSTALL step. The
+  phone can then show the dialog `BluetoothKeyMissingDialog`, with the error
+  `MtuGattError` or `HCI_ERR_KEY_MISSING`. Do not remove the device from the
+  Bluetooth settings of the phone. Do not make a new pair. This condition is
+  temporary. Make the reset of the watch by hand. The link then comes back, and
+  the pair stays correct. A new pair is not necessary and wastes time.
+
+### Results of the procedure on 2026-07-28
+
+The build step was successful. The variant `prf` links for this board. The
+image uses 451963 bytes of the 512 KiB region. This is 86.21 per cent. Thus
+approximately 60 KiB stays free. The linker keeps the limit of the region. See
+`wscript:846-848`. An image that is too large stops the build with an error.
+
+The bundle is `recovery_bangle2_v4.30.0-78-gc6e8cde8.pbz`. The manifest gives
+`type=recovery`, `hwrev=bangle2`, `size=451963`, `crc=3212142839`, and
+`versionTag=v4.30.0-78-gc6e8cde8`.
+
+The transfer was successful. The log of the phone app gives this sequence. Each
+step has an acknowledgement:
+
+```
+WaitingToStart -> InProgress -> PutBytes -> PutBytesCommit -> PutBytesResponse
+-> PutBytesInstall -> PutBytesResponse -> WaitingForReboot
+```
+
+The operator then made the reset by hand with a long press of the button. At
+the next boot, `check_prf_update` copied the image into the safe firmware
+region.
+
+The watch now reports a correct recovery firmware version:
+
+```
+recoveryFwVersion=FirmwareVersion(stringVersion=v4.30.0-78-gc6e8cde8,
+timestamp=2026-07-28T08:36:49Z, gitHash=c6e8cde, isRecovery=true)
+```
+
+The value `gitHash=c6e8cde` refers to the commit that was the tip of this branch
+when the image was built. A later rebase of this branch changed the identifiers
+of its commits. Thus this value does not agree with a commit that is in the
+branch now. Do not try to find it.
+
+The durable proof of the image is the archived bundle in
+`~/Development/bangle2-swd-backups/`. Its SHA-256 is
+`6e19d69ce4e452c64242d3dc1838288c8d7712d62fa49fc5290c5e20d6a95377`. This value
+is identical to the image that the procedure installed. The archive also keeps
+the Kconfig and the linker map of the same build.
+
+The internal flash did not change. The value `runningFwVersion` stays
+`v4.30.0-76-g8526296e`. The procedure writes only the external NOR flash.
+
+### Test of the result without the phone setting
+
+The setting `Ignore Missing PRF` was then put off. The watch was disconnected
+and connected again. These things are true after this test:
+
+- The log has no line `ConnectedPebbleDeviceInRecovery`.
+- BlobDB started without help: `BlobDB2Command$Version`, then
+  `BlobDb version: 1`, then `SyncDone`, then `WriteBack`.
+- The Devices tab shows `Connected`.
+- The field `isUnfaithful` is `false`.
+- A notification from the phone reached the watch and the watch showed it. The
+  log gives `insert: Notification`, then `BlobCommand$InsertCommand`, then
+  `insert: result = Success`.
+
+Therefore the correction is complete. The phone settings are not necessary.
+
+Note for a test with `adb`: a notification from `adb` comes from the
+application `com.android.shell`. If that application is muted, the app gives
+`NotSentAppMuted` and sends nothing. This condition is not a fault. To test the
+full path, use a notification from an application that is not muted.
 
 ## Why the firmware must not report false metadata
 
@@ -245,3 +341,17 @@ One result of `UNKNOWN` is useful. The check for the hardware revision at
 of the firmware. Both are `UNKNOWN`, so the check permits the sideload. The
 check for the slot does not apply to recovery firmware. Therefore the procedure
 above is possible today.
+
+An entry for `BANGLE2(22)` stops this useful result. After the change, the
+platform of the watch is 22 and the platform of the firmware stays `UNKNOWN`.
+The two values do not agree, and the check refuses the sideload.
+
+The sequence was therefore important. The sideload was done first, on
+2026-07-28. Thus this hazard is now in the past for this watch. Two conditions
+stay true for other work:
+
+- For a watch that has no PRF image, do the sideload before the upstream
+  change.
+- If the upstream change comes first, the change must also give a correct
+  result for the hardware revision `bangle2`. If it does not, the recovery path
+  closes.
