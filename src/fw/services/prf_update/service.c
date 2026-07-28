@@ -72,9 +72,17 @@ void check_prf_update(void) {
     return;
   }
 
-  boot_bit_clear(BOOT_BIT_NEW_PRF_AVAILABLE);
-
 #ifndef CONFIG_RECOVERY_FW
+  // Clear the bit only AFTER the copy completes. prv_do_update() erases
+  // SAFE_FIRMWARE and writes ~452 KiB to external flash; a power loss inside
+  // that window used to leave SAFE_FIRMWARE part-written with the retry bit
+  // already gone, so nothing re-read the still-good staged image in
+  // FIRMWARE_SLOT_1 and recovery stayed broken until someone sent a new PRF
+  // over BLE. Clearing afterwards makes an interrupted install retry on the
+  // next boot. The operation is idempotent: it re-erases and re-copies from
+  // the same source.
   prv_do_update();
 #endif
+
+  boot_bit_clear(BOOT_BIT_NEW_PRF_AVAILABLE);
 }
