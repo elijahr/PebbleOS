@@ -786,6 +786,56 @@ void test_recognizer_manager__ownership_survives_reset_and_teardown(void) {
   cl_assert_equal_p(layer_a.recognizer_list.node, NULL);
 }
 
+void test_recognizer_manager__public_reset_clears_manager_fields(void) {
+  bool updated = false;
+  bool cancelled = false;
+  bool destroyed = false;
+  RecognizerState new_state = RecognizerState_Started;
+  s_test_impl_data.updated = &updated;
+  s_test_impl_data.cancelled = &cancelled;
+  s_test_impl_data.destroyed = &destroyed;
+  s_test_impl_data.new_state = &new_state;
+  Recognizer *r = test_recognizer_create(&s_test_impl_data, NULL);
+  test_recognizer_enable_on_destroy();
+
+  Window window = {};
+  layer_init(&window.layer, &GRectZero);
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  manager.window = &window;
+  s_manager = &manager;
+
+  Layer layer_a;
+  layer_init(&layer_a, &GRectZero);
+  layer_add_child(&window.layer, &layer_a);
+  layer_attach_recognizer(&layer_a, r);
+
+  // Drive the manager into RecognizersTriggered: the recognizer transitions to Started when it
+  // handles the touchdown
+  s_active_layer = &layer_a;
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  recognizer_manager_handle_touch_event(&e, &manager);
+
+  cl_assert_equal_b(updated, true);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_RecognizersTriggered);
+  cl_assert_equal_p(manager.triggered, r);
+  cl_assert_equal_p(manager.active_layer, &layer_a);
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Started);
+
+  // The public reset must perform the full reset the header contract describes
+  recognizer_manager_reset(&manager);
+
+  cl_assert_equal_i(manager.state, RecognizerManagerState_WaitForTouchdown);
+  cl_assert_equal_p(manager.triggered, NULL);
+  cl_assert_equal_p(manager.active_layer, NULL);
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Possible);
+  // The Started recognizer was cancelled on its way back to Possible
+  cl_assert_equal_b(cancelled, true);
+
+  layer_deinit(&layer_a);
+  cl_assert_equal_b(destroyed, true);
+}
+
 void test_recognizer_manager__deregister_recognizer(void) {
   NEW_RECOGNIZER(r1) = test_recognizer_create(&s_test_impl_data, NULL);
   NEW_RECOGNIZER(r2) = test_recognizer_create(&s_test_impl_data, NULL);

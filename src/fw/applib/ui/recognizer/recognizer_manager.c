@@ -315,7 +315,7 @@ void recognizer_manager_cancel_touches(RecognizerManager *manager) {
 
 void recognizer_manager_reset(RecognizerManager *manager) {
   PBL_ASSERTN(manager);
-  prv_reset_all_recognizers(manager);
+  prv_reset(manager);
 }
 
 void recognizer_manager_register_recognizer(RecognizerManager *manager, Recognizer *recognizer) {
