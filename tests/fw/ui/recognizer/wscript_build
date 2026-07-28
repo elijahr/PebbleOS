@@ -6,12 +6,22 @@ clar(ctx,
     test_sources_ant_glob = "test_recognizer.c")
 
 clar(ctx,
-    sources_ant_glob = " src/fw/applib/graphics/gtypes.c" \
+    sources_ant_glob = " src/fw/applib/graphics/gcolor_definitions.c" \
+                       " src/fw/applib/graphics/gtypes.c" \
+                       " src/fw/applib/ui/app_window_stack.c" \
                        " src/fw/applib/ui/layer.c" \
                        " src/fw/applib/ui/recognizer/recognizer.c" \
                        " src/fw/applib/ui/recognizer/recognizer_manager.c" \
-                       " tests/fw/ui/recognizer/test_recognizer_impl.c",
-    defines = ['CONFIG_TOUCH'],
+                       " src/fw/applib/ui/window.c" \
+                       " src/fw/applib/ui/window_manager.c" \
+                       " src/fw/applib/ui/window_stack.c" \
+                       " src/fw/kernel/ui/modals/modal_manager.c" \
+                       " tests/fakes/fake_animation.c" \
+                       " tests/fakes/fake_events.c" \
+                       " tests/fw/ui/recognizer/test_recognizer_impl.c" \
+                       " tests/stubs/stubs_click.c",
+    defines = ['CONFIG_TOUCH', 'CONFIG_SCREEN_COLOR_DEPTH_BITS=8'],
+    override_includes = ['dummy_board'],
     test_sources_ant_glob = "test_recognizer_manager.c")
 
 # vim:filetype=python

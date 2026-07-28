@@ -55,6 +55,10 @@ void recognizer_destroy(Recognizer *recognizer) {}
 //   not-yet-visited entry passes here but would touch a stale node in real firmware
 // - the list argument is ignored; one global array backs every list
 // - recognizer_add_to_list has no is_owned guard against double-add
+// - recognizer_remove_from_list removes by swap-with-last, reordering the remaining
+//   entries, while the real list_remove unlinks in place and preserves order
+// (the array also caps at MAX_TEST_RECOGNIZERS entries -- a harness limit, not a
+// semantic divergence)
 #define MAX_TEST_RECOGNIZERS 4
 static Recognizer *s_attached_recognizers[MAX_TEST_RECOGNIZERS];
 static int s_num_attached_recognizers;
