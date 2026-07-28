@@ -739,6 +739,53 @@ void test_recognizer_manager__handle_touch_event(void) {
   prv_destroy_recognizers(recognizers, k_rec_count);
 }
 
+void test_recognizer_manager__ownership_survives_reset_and_teardown(void) {
+  bool destroyed = false;
+  bool updated = false;
+  RecognizerState new_state = RecognizerState_Possible;
+  s_test_impl_data.destroyed = &destroyed;
+  s_test_impl_data.updated = &updated;
+  s_test_impl_data.new_state = &new_state;
+  Recognizer *r = test_recognizer_create(&s_test_impl_data, NULL);
+  test_recognizer_enable_on_destroy();
+
+  Window window = {};
+  layer_init(&window.layer, &GRectZero);
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  manager.window = &window;
+  s_manager = &manager;
+
+  Layer layer_a;
+  layer_init(&layer_a, &GRectZero);
+  layer_add_child(&window.layer, &layer_a);
+
+  layer_attach_recognizer(&layer_a, r);
+  cl_assert(recognizer_is_owned(r));
+  cl_assert_equal_p(recognizer_get_manager(r), &manager);
+
+  // Complete one full gesture: the recognizer transitions to Completed on touchdown, so the
+  // manager runs its reset-all path (prv_fail_then_reset_if_no_active_recognizers)
+  s_active_layer = &layer_a;
+  new_state = RecognizerState_Completed;
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  recognizer_manager_handle_touch_event(&e, &manager);
+
+  // The manager-driven reset ran to completion...
+  cl_assert_equal_b(updated, true);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_WaitForTouchdown);
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Possible);
+  // ...and must not have clobbered list ownership
+  cl_assert(recognizer_is_owned(r));
+
+  // Teardown: layer_deinit destroys the recognizer exactly once and unlinks it from the list.
+  // Without ownership intact, recognizer_remove_from_list early-returns and layer_deinit
+  // iterates a list that still links the freed recognizer.
+  layer_deinit(&layer_a);
+  cl_assert_equal_b(destroyed, true);
+  cl_assert_equal_p(layer_a.recognizer_list.node, NULL);
+}
+
 void test_recognizer_manager__deregister_recognizer(void) {
   NEW_RECOGNIZER(r1) = test_recognizer_create(&s_test_impl_data, NULL);
   NEW_RECOGNIZER(r2) = test_recognizer_create(&s_test_impl_data, NULL);

@@ -171,7 +171,8 @@ void recognizer_reset(Recognizer *recognizer) {
 
   recognizer->impl->reset(recognizer);
   prv_set_state(recognizer, RecognizerState_Possible);
-  recognizer->flags = 0;
+  // Clear only per-dispatch state: is_owned is list-membership state and must survive a reset
+  recognizer->handling_touch_event = false;
 }
 
 void recognizer_cancel(Recognizer *recognizer) {
