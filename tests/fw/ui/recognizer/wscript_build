@@ -6,6 +6,11 @@ clar(ctx,
     test_sources_ant_glob = "test_recognizer.c")
 
 clar(ctx,
+    sources_ant_glob = " src/fw/applib/ui/recognizer/drag.c" \
+                       " src/fw/applib/ui/recognizer/recognizer.c",
+    test_sources_ant_glob = "test_drag.c")
+
+clar(ctx,
     sources_ant_glob = " src/fw/applib/graphics/gcolor_definitions.c" \
                        " src/fw/applib/graphics/gtypes.c" \
                        " src/fw/applib/ui/app_window_stack.c" \
