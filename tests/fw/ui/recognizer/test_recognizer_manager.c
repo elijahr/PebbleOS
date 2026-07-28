@@ -836,6 +836,43 @@ void test_recognizer_manager__public_reset_clears_manager_fields(void) {
   cl_assert_equal_b(destroyed, true);
 }
 
+void test_recognizer_manager__cancel_touches_cancels_live_recognizer(void) {
+  bool cancelled = false;
+  bool updated = false;
+  RecognizerState new_state = RecognizerState_Started;
+  s_test_impl_data.cancelled = &cancelled;
+  s_test_impl_data.updated = &updated;
+  s_test_impl_data.new_state = &new_state;
+  NEW_RECOGNIZER(r) = test_recognizer_create(&s_test_impl_data, NULL);
+
+  RecognizerList app_list = {};
+  s_app_list = &app_list;
+  recognizer_add_to_list(r, &app_list);
+
+  // App-list-only manager: no window is attached, so the touchdown dispatches
+  // straight to the app recognizer list
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  manager.window = NULL;
+
+  // The recognizer transitions to Started when it handles the touchdown, so the
+  // manager records it as the triggered recognizer
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_b(updated, true);
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Started);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_RecognizersTriggered);
+  cl_assert_equal_p(manager.triggered, r);
+
+  // cancel_touches must cancel the live recognizer and release it as triggered
+  recognizer_manager_cancel_touches(&manager);
+  cl_assert_equal_b(cancelled, true);
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Cancelled);
+  cl_assert_equal_p(manager.triggered, NULL);
+
+  recognizer_remove_from_list(r, &app_list);
+}
+
 void test_recognizer_manager__deregister_recognizer(void) {
   NEW_RECOGNIZER(r1) = test_recognizer_create(&s_test_impl_data, NULL);
   NEW_RECOGNIZER(r2) = test_recognizer_create(&s_test_impl_data, NULL);

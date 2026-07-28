@@ -160,7 +160,8 @@ static bool prv_cancel_or_fail_recognizer(Recognizer *recognizer, void *context)
 }
 
 static void prv_cancel_all_recognizers(RecognizerManager *manager) {
-  prv_process_all_recognizers(manager, prv_cancel_or_fail_recognizer, NULL);
+  // The iterator context is the manager: prv_cancel_or_fail_recognizer dereferences it
+  prv_process_all_recognizers(manager, prv_cancel_or_fail_recognizer, manager);
 }
 
 T_STATIC void prv_cancel_layer_tree_recognizers(RecognizerManager *manager, Layer *top_layer,
