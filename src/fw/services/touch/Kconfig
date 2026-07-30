@@ -24,12 +24,17 @@ config TOUCH_NAV_BUTTONS
 config TOUCH_WIDGET_DRAG
     bool "Drag-to-scroll widgets on touch boards"
     default n
+    depends on TOUCH
     help
-      Auto-attach a vertical drag recognizer to ScrollLayer (and, by
-      extension, MenuLayer) so its content offset tracks a touch drag
-      directly, instead of going through synthesized navigation buttons.
-      Deliberately decoupled from TOUCH_NAV_BUTTONS: a board can drag-scroll
-      widgets with or without synthetic button emulation.
+      Auto-attach a vertical drag recognizer to ScrollLayer so its content
+      offset tracks a touch drag directly, instead of going through
+      synthesized navigation buttons. Deliberately decoupled from
+      TOUCH_NAV_BUTTONS: a board can drag-scroll widgets with or without
+      synthetic button emulation.
+      MenuLayer selection is NOT yet reconciled with a direct drag: the
+      content offset moves but the selected row does not follow it, so a
+      tap after dragging a menu can activate the wrong row. Tracked as
+      follow-up work; do not rely on MenuLayer drag-selection yet.
 
 module = SERVICE_TOUCH
 module-str = Touch
