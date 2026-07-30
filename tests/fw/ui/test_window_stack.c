@@ -1,7 +1,12 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include "applib/touch_service.h"
+#include "applib/ui/app_window_recognizer_glue.h"
 #include "applib/ui/app_window_stack.h"
+#include "applib/ui/recognizer/recognizer.h"
+#include "applib/ui/recognizer/recognizer_list.h"
+#include "applib/ui/recognizer/recognizer_manager.h"
 #include "applib/ui/window.h"
 #include "applib/ui/window_manager.h"
 #include "applib/ui/window_stack.h"
@@ -211,6 +216,82 @@ void app_click_config_setup_with_window(ClickManager *click_manager, struct Wind
   s_last_click_configured_window = window;
 }
 
+// Task 8 recognizer-glue wiring fixtures
+////////////////////////////////////
+// CONFIG_TOUCH pulls the real app_window_recognizer_glue.c into this suite (see wscript_build)
+// so window.c's and window_stack.c's glue call sites compile for real instead of linking the
+// CONFIG_TOUCH=n no-op stubs. recognizer_manager.c and touch_service.c are NOT compiled here
+// (mirroring test_recognizer_manager.c's approach for app_state_get_recognizer_manager and
+// app_state_get_recognizer_glue_state), so their entry points are spied on instead of exercised
+// for real; recognizer_manager_set_window's spy still writes manager->window, matching the real
+// implementation, so the off-screen glue's `mgr->window != window` guard behaves correctly.
+static RecognizerManager *s_recognizer_manager;
+static AppWindowRecognizerGlueState s_recognizer_glue_state;
+
+static int s_recognizer_manager_set_window_calls;
+static Window *s_recognizer_manager_set_window_captured;
+static int s_recognizer_manager_cancel_touches_calls;
+static int s_recognizer_manager_reset_calls;
+
+RecognizerManager *app_state_get_recognizer_manager(void) {
+  return s_recognizer_manager;
+}
+
+AppWindowRecognizerGlueState *app_state_get_recognizer_glue_state(void) {
+  return &s_recognizer_glue_state;
+}
+
+void recognizer_manager_set_window(RecognizerManager *manager, struct Window *window) {
+  s_recognizer_manager_set_window_calls++;
+  s_recognizer_manager_set_window_captured = window;
+  manager->window = window;
+}
+
+void recognizer_manager_cancel_touches(RecognizerManager *manager) {
+  s_recognizer_manager_cancel_touches_calls++;
+}
+
+void recognizer_manager_reset(RecognizerManager *manager) {
+  s_recognizer_manager_reset_calls++;
+}
+
+void recognizer_manager_handle_touch_event(const TouchEvent *touch_event, void *context) {
+  // Never exercised from these tests (touch_service.c is not compiled here); this only needs
+  // to link because app_window_recognizer_glue.c's static prv_touch_handler references it.
+}
+
+void touch_service_subscribe(TouchServiceHandler handler, void *context) {}
+
+void touch_service_unsubscribe(void) {}
+
+// layer.c's CONFIG_TOUCH-gated recognizer-attach paths (layer_attach_recognizer /
+// layer_detach_recognizer) reference these recognizer.c/recognizer_manager.c entry points.
+// This suite exercises neither path (no test attaches a recognizer to a layer -- that is
+// test_recognizer.c's and test_recognizer_manager.c's job), so no-op stubs satisfy the link.
+void recognizer_destroy(Recognizer *recognizer) {}
+
+bool recognizer_is_owned(Recognizer *recognizer) {
+  return false;
+}
+
+void recognizer_add_to_list(Recognizer *recognizer, RecognizerList *list) {}
+
+void recognizer_remove_from_list(Recognizer *recognizer, RecognizerList *list) {}
+
+bool recognizer_is_in_list(Recognizer *recognizer, RecognizerList *list) {
+  return false;
+}
+
+bool recognizer_list_iterate(RecognizerList *list, RecognizerListIteratorCb iter_cb,
+                              void *context) {
+  return true;
+}
+
+void recognizer_manager_register_recognizer(RecognizerManager *manager, Recognizer *recognizer) {}
+
+void recognizer_manager_deregister_recognizer(RecognizerManager *manager,
+                                               Recognizer *recognizer) {}
+
 // Helpers
 ////////////////////////////////////
 static int16_t prv_get_load_unload_count(void) {
@@ -321,6 +402,13 @@ void test_window_stack__initialize(void) {
   prv_reset_counts();
 
   stub_pebble_tasks_set_current(PebbleTask_KernelMain);
+
+  s_recognizer_manager = NULL;
+  s_recognizer_glue_state = (AppWindowRecognizerGlueState){};
+  s_recognizer_manager_set_window_calls = 0;
+  s_recognizer_manager_set_window_captured = NULL;
+  s_recognizer_manager_cancel_touches_calls = 0;
+  s_recognizer_manager_reset_calls = 0;
 }
 
 void test_window_stack__cleanup(void) {
@@ -1425,4 +1513,92 @@ void test_window_stack__double_animated_push(void) {
   Animation *second = fake_animation_get_next_animation(first);
   cl_assert(!animation_is_scheduled(first));
   cl_assert(animation_is_scheduled(second));
+}
+
+// Task 8 recognizer-glue wiring tests
+////////////////////////////////////
+// Each test below isolates one of the three call sites into
+// app_window_recognizer_glue_window_focused/_window_off_screen so a mutation deleting any single
+// call site fails exactly one of these tests (green-mirage audit finding: previously all three
+// call sites were deletable with the suite still green, because this suite never compiled them).
+
+// Targets window_stack.c's window_transition_context_appear call site: the only path reached by
+// a plain app_window_stack_push into an empty stack (window.c's prv_call_click_provider path is
+// not hit here since window_stack.c calls app_click_config_setup_with_window directly).
+void test_window_stack__recognizer_glue_appear_seam_on_push(void) {
+  static RecognizerManager manager;
+  manager = (RecognizerManager){};
+  s_recognizer_manager = &manager;
+
+  Window *window = window_create();
+  stub_pebble_tasks_set_current(PebbleTask_App);
+
+  app_window_stack_push(window, true);
+
+  cl_assert_equal_i(s_recognizer_manager_set_window_calls, 1);
+  cl_assert(s_recognizer_manager_set_window_captured == window);
+  cl_assert(manager.window == window);
+  cl_assert_equal_i(s_recognizer_manager_cancel_touches_calls, 1);
+
+  app_window_stack_pop(true);
+  window_destroy(window);
+}
+
+// Targets window.c's prv_call_click_provider call site via the direct
+// window_set_click_config_provider path (the "already on screen" branch), which window_stack.c's
+// push transition never reaches.
+void test_window_stack__recognizer_glue_appear_seam_via_click_config_provider(void) {
+  static RecognizerManager manager;
+  manager = (RecognizerManager){};
+  s_recognizer_manager = &manager;
+
+  Window *window = window_create();
+  stub_pebble_tasks_set_current(PebbleTask_App);
+
+  app_window_stack_push(window, true);
+
+  // Reset spy counts: the push above already exercised window_stack.c's separate appear-seam
+  // call site (covered by the test above), so only window.c's path is measured from here.
+  s_recognizer_manager_set_window_calls = 0;
+  s_recognizer_manager_set_window_captured = NULL;
+  s_recognizer_manager_cancel_touches_calls = 0;
+
+  window_set_click_config_provider(window, prv_click_config_provider);
+
+  cl_assert_equal_i(s_recognizer_manager_set_window_calls, 1);
+  cl_assert(s_recognizer_manager_set_window_captured == window);
+  cl_assert(manager.window == window);
+  cl_assert_equal_i(s_recognizer_manager_cancel_touches_calls, 1);
+
+  app_window_stack_pop(true);
+  window_destroy(window);
+}
+
+// Targets window.c's window_set_on_screen off-screen branch: popping the only window on the
+// stack drives it off screen with no window_to to appear, so neither appear-seam call site fires.
+void test_window_stack__recognizer_glue_off_screen_on_pop(void) {
+  static RecognizerManager manager;
+  manager = (RecognizerManager){};
+  s_recognizer_manager = &manager;
+
+  Window *window = window_create();
+  stub_pebble_tasks_set_current(PebbleTask_App);
+
+  app_window_stack_push(window, true);
+  cl_assert(manager.window == window);
+
+  s_recognizer_manager_set_window_calls = 0;
+  s_recognizer_manager_set_window_captured = (Window *)0x1;  // sentinel, must become NULL
+  s_recognizer_manager_cancel_touches_calls = 0;
+  s_recognizer_manager_reset_calls = 0;
+
+  app_window_stack_pop(true);
+
+  cl_assert_equal_i(s_recognizer_manager_cancel_touches_calls, 1);
+  cl_assert_equal_i(s_recognizer_manager_reset_calls, 1);
+  cl_assert_equal_i(s_recognizer_manager_set_window_calls, 1);
+  cl_assert(s_recognizer_manager_set_window_captured == NULL);
+  cl_assert(manager.window == NULL);
+
+  window_destroy(window);
 }

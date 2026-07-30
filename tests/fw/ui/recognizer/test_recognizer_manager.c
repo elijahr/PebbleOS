@@ -1821,8 +1821,13 @@ void test_recognizer_manager__detach_from_non_owner_is_safe_noop(void) {
   cl_assert(recognizer_is_owned(recognizers[0]));
   cl_assert(recognizer_is_owned(recognizers[1]));
 
-  // Layer B never owned recognizers[0]; detaching it from B must be a no-op.
-  layer_detach_recognizer(&layer_b, recognizers[0]);
+  // Bypass layer.c's own is_member guard (layer_detach_recognizer) and call
+  // recognizer_remove_from_list directly with a foreign list. layer_detach_recognizer's
+  // is_member check short-circuits before ever calling recognizer_remove_from_list with a list
+  // the recognizer doesn't belong to, so routing through it (as this test previously did) never
+  // reaches recognizer.c's own membership guard -- it only pins layer.c's guard, which
+  // detach_from_non_owner_same_manager_is_safe_noop below already covers.
+  recognizer_remove_from_list(recognizers[0], &layer_b.recognizer_list);
 
   // recognizers[0] must still be owned and layer A's list must still contain both
   // recognizers, in order, with an intact head.
