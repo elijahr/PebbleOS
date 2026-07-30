@@ -64,12 +64,13 @@ static void prv_menu_layer_offset_reconcile_row_callback(MenuIterator *iterator)
   // here): when walking upward, cursor.y is computed from a cell height queried with
   // is_selected=false, then cursor.h is re-queried with is_selected=true WITHOUT recomputing y.
   // row_top/row_bottom above therefore mix two geometries whenever a client's get_cell_height
-  // varies with selection state (center_focused, MENU_CELL_ROUND_FOCUSED_*): the overlap test can
-  // be off by the delta between the two heights near a viewport boundary, in the upward direction
-  // only. Not compensated for here -- fixing the walk function itself is out of scope for this
-  // reconcile feature. In practice this is defused by the center_focused bail-out above (the case
-  // most likely to vary cell height by selection), but an app using
-  // MENU_CELL_ROUND_FOCUSED_* without center_focused would still see it.
+  // varies with selection state: the overlap test can be off by the delta between the two
+  // heights near a viewport boundary, in the upward direction only. Not compensated for here --
+  // fixing the walk function itself is out of scope for this reconcile feature. Exposure: any
+  // center_focused menu when no animation is in flight (the ordinary drag case), plus any
+  // MENU_CELL_ROUND_FOCUSED_* user regardless of center_focused. The bail-out below in
+  // prv_menu_scroll_offset_changed_handler narrows only the center_focused/animation-in-flight
+  // window; it does not eliminate the exposure.
   if (row_bottom > it->content_top_y && row_top < it->content_bottom_y) {
     it->it.menu_layer->selection = it->it.cursor;
     it->found = true;
