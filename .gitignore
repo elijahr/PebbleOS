@@ -1,4 +1,11 @@
 build
+# Out-of-tree build dirs from `./waf configure --out=<dir>`, e.g. the
+# `--out=build-prf` used to build the prf variant without clobbering the
+# normal build. `build` above does not match these, so without this line a
+# `git add -A` stages a few hundred MB of build output.
+# Anchored to the repo root and restricted to directories on purpose: an
+# unanchored `build-*` also matches .github/workflows/build-*.yml.
+/build-*/
 xcode
 
 .ycm*
