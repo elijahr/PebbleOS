@@ -258,6 +258,23 @@ void test_menu_layer_drag__nearest_visible_row_on_scrollout(void) {
   cl_assert_equal_i(1, s_selection_changed_calls[0].new_index.row);
 }
 
+// The highlight (inverter) layer must reposition to track the reconciled selection -- otherwise
+// the highlighted row and the row that activates on a post-drag tap diverge. Same 3-update drag
+// as nearest_visible_row_on_scrollout: selection moves from row 0 (y=0) to row 1 (y=44,h=44).
+void test_menu_layer_drag__highlight_follows_reconciled_selection(void) {
+  prv_init_menu(10, true);
+
+  prv_drag_updates(&s_menu_layer, 3);
+
+  cl_assert_equal_i(1, s_menu_layer.selection.index.row);
+  cl_assert_equal_i(44, s_menu_layer.selection.y);
+
+  cl_assert_equal_i(0, s_menu_layer.inverter.layer.frame.origin.x);
+  cl_assert_equal_i(44, s_menu_layer.inverter.layer.frame.origin.y);
+  cl_assert_equal_i(168, s_menu_layer.inverter.layer.frame.size.w);
+  cl_assert_equal_i(44, s_menu_layer.inverter.layer.frame.size.h);
+}
+
 // A selection_changed callback firing mid-reconciliation legally calls
 // menu_layer_set_selected_index() with an off-screen row. The in_offset_reconcile guard must
 // suppress the resulting scroll-position re-derivation (offset must stay at the reconcile-only

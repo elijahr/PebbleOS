@@ -33,8 +33,9 @@ config TOUCH_WIDGET_DRAG
       synthetic button emulation.
       MenuLayer reconciles its selection against a drag-moved content
       offset: if the selected row scrolls out of view, selection moves to
-      the nearest row still visible, so a tap after dragging a menu
-      activates the row the user actually sees selected.
+      the nearest row still visible, and the highlight is repositioned to
+      match, so a tap after dragging a menu activates the row the user
+      actually sees selected.
 
 module = SERVICE_TOUCH
 module-str = Touch

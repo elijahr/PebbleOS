@@ -33,6 +33,8 @@ static void prv_menu_layer_walk_upward_from_iterator(MenuIterator *it);
 static void prv_menu_layer_walk_downward_from_iterator(MenuIterator *it);
 static void prv_menu_layer_iterator_noop_callback(MenuIterator *it);
 static void prv_announce_selection_changed(MenuLayer *menu_layer, MenuIndex prev_index);
+static void prv_menu_layer_update_selection_highlight(MenuLayer *menu_layer, bool up, bool animated,
+                                                      bool change_ongoing_animation);
 
 //////////////////////
 // Menu Layer
@@ -109,6 +111,15 @@ static void prv_menu_scroll_offset_changed_handler(ScrollLayer *scroll_layer,
     }
 
     if (recon_it.found && menu_index_compare(&menu_layer->selection.index, &prev_index) != 0) {
+      // Snap the highlight to the reconciled row so it matches the row a subsequent tap will
+      // activate. Unanimated and without touching any ongoing animation (change_ongoing_animation
+      // = false): mid-drag, the frame must just track the new selection, never animate -- same
+      // idiom prv_center_focus_animation_update_impl uses to reposition without side effects.
+      // Content offset is deliberately left alone here: the offset itself is what the drag is
+      // actively driving, and prv_menu_layer_update_selection_scroll_position() (which would
+      // re-derive it from the selection) is already blocked by the in_offset_reconcile guard.
+      prv_menu_layer_update_selection_highlight(menu_layer, above_viewport, false /* animated */,
+                                                false /* change_ongoing_animation */);
       prv_announce_selection_changed(menu_layer, prev_index);
     }
   }
