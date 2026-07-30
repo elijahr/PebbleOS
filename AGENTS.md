@@ -84,18 +84,34 @@ at `0x200000` and must match the build; SWD is the only delivery path (BLE
 DFU of custom firmware is impossible); never run `mass_erase`,
 `nrf52_recover`, or write UICR/FICR on the watch; the agent never pushes.
 
-### Roadmap checklist (ordered; R1 is the active feature)
+On PRF specifically: its absence is recorded in `boards/bangle2/Kconfig`
+(`config PRF_UNAVAILABLE`) — the blocker is the missing bootloader (nothing
+selects PRF vs normal firmware at reset; "a PRF reset lands in the same image
+forever"), NOT a decision against PRF. The flash map already reserves a 512 K
+`SAFE_FIRMWARE` region (`flash_region_bangle2.h:29`). This is the root of the
+official app's recovery-mode gate: the app forces recovery mode when the watch
+reports `recoveryFwVersion=null`, which skips `blobDB.init()` and blocks
+notifications. See R1 (near-term metadata fix) and R10 (bootloader + PRF).
+
+### Roadmap checklist (ordered)
 
 - [x] **R0 — Commit the touch bring-up pile.** Done: recovery blob,
   de-shear recognizer + touchlog, 5 s-hold reset, atomic synthetic clicks.
   Pushed to `elijahr/PebbleOS` fork only.
-- [ ] **R1 — BLE bring-up (ACTIVE).** Replace `CONFIG_BT_FW_STUB` with the
-  in-tree NimBLE host+controller (bare-metal on RADIO; no SoftDevice — the
-  asterix glue in `src/bluetooth-fw/nimble/` is the template). Sub-tasks:
-  real nRF RNG driver (replace `CONFIG_RNG_STUB`, blocks pairing);
-  LFCLK/HFXO + RADIO IRQ-priority setup; on-silicon validation only (Renode
-  cannot model RADIO); plan the emulator test split. Fix R3 before power
-  measurement.
+- [~] **R1 — BLE bring-up (VALIDATED on hardware 2026-07-27; follow-ups open).**
+  NimBLE host+controller enabled (bare-metal on RADIO, no SoftDevice) via the
+  configure-time split `-DCONFIG_BT_FW_NIMBLE=y` (D2: mainline defconfig keeps
+  the stub, CI job `387a1920` compiles the silicon config). Durable code change:
+  PPI CH4-7 reservation (`ad0a673b`). NO RNG driver needed (D1 — the NimBLE
+  controller owns `NRF_RNG`; `CONFIG_RNG_STUB=y` pairs fine; a driver would
+  contend for the peripheral). Bench: V1 boot+host-sync PASS (5/5), V2
+  pairing+bond+PPoGATT+Pebble Protocol PASS, V3 time sync PASS. Full evidence:
+  `~/.local/spellbook/docs/Users-eek-Development-PebbleOS/plans/2026-07-27-bangle2-ble-bench-validation-log.md`.
+  Open follow-ups: notifications blocked by the recovery-mode/`recoveryFwVersion=null`
+  gate (near-term fix in progress on branch `bangle2-notifications`; durable fix
+  = R10); V4 robustness + V5 coexistence; platform-22 `UNKNOWN`/FW-update
+  cosmetics (register BANGLE2(22) upstream in `libpebble3`); a one-off
+  SM/pairing-timeout assert (`0x11`) to root-cause. Fix R3 before power work.
 - [ ] **R2 — Display white-border / top-cutout anomaly.** Border constant is
   BLACK yet renders white → suspect 3bpp polarity / bit-reversal in encode,
   or Y-offset off-by-one. Bench debug.
@@ -123,6 +139,16 @@ DFU of custom firmware is impossible); never run `mass_erase`,
   + `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` on every
   commit, no issue refs; run `gitlint` + `clang-format`; resolve the
   touchlog gate. DO NOT PUSH — the operator pushes upstream.
+- [ ] **R10 — Bootloader + bootable PRF (recovery infrastructure).** Build
+  boot-selection at reset (PRF vs normal firmware) + a PRF firmware image in the
+  reserved `SAFE_FIRMWARE` region (`flash_region_bangle2.h:29`). Unblocks
+  over-BLE recovery (un-brick without SWD), safe OTA updates, and the official
+  app's recovery-mode gate honestly (non-null `recoveryFwVersion`); removes
+  `PRF_UNAVAILABLE`. Owner: pebble-bootloader (own worktree/branch off
+  `bangle2-board`). NOTE the near-term stopgap that does NOT need a bootloader:
+  report valid recovery FW metadata so the app exits recovery mode (owner:
+  pebble-noti, branch `bangle2-notifications`) — must degrade to a stable state
+  per `PRF_UNAVAILABLE` (there is no real PRF to boot into).
 
 ## Git rules
 
