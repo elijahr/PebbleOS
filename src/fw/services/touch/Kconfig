@@ -21,6 +21,16 @@ config TOUCH_NAV_BUTTONS
       without any app-level changes. Intended for boards with a touchscreen but
       a reduced button count (e.g. Bangle.js 2).
 
+config TOUCH_WIDGET_DRAG
+    bool "Drag-to-scroll widgets on touch boards"
+    default n
+    help
+      Auto-attach a vertical drag recognizer to ScrollLayer (and, by
+      extension, MenuLayer) so its content offset tracks a touch drag
+      directly, instead of going through synthesized navigation buttons.
+      Deliberately decoupled from TOUCH_NAV_BUTTONS: a board can drag-scroll
+      widgets with or without synthetic button emulation.
+
 module = SERVICE_TOUCH
 module-str = Touch
 source "src/fw/Kconfig.template.log_level"
