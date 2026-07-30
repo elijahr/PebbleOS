@@ -308,6 +308,7 @@ void recognizer_manager_handle_touch_event(const TouchEvent *touch_event, void *
     // NULL and the manager didn't already reset -- return to WaitForTouchdown instead of
     // latching active_layer across strokes (e.g. a drag that never crosses its start
     // threshold, which never explicitly fails and would otherwise sit in Possible forever).
+    // Assumes single-stroke gestures; revisit for a multi-stroke recognizer (e.g. multi-tap).
     if ((touch_event->type == TouchEvent_Liftoff) &&
         (manager->state != RecognizerManagerState_WaitForTouchdown) && !manager->triggered) {
       prv_reset(manager);

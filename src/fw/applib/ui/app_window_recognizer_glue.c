@@ -7,6 +7,7 @@
 
 #include "applib/event_service_client.h"
 #include "applib/touch_service.h"
+#include "applib/touch_service_private.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/recognizer/recognizer_manager.h"
 #include "applib/ui/window.h"
@@ -65,7 +66,13 @@ void app_window_recognizer_glue_attach_count_changed(uint16_t new_count) {
       state->focus_subscribed = true;
     }
   } else if (new_count == 0) {
-    touch_service_unsubscribe();
+    // Only unsubscribe if our handler is still installed: an app that called
+    // touch_service_subscribe() after us now owns the (single) raw_handler slot, and
+    // unsubscribing here would silently clear the app's handler instead of ours.
+    TouchServiceState *touch_state = app_state_get_touch_service_state();
+    if (touch_state && (touch_state->raw_handler == prv_touch_handler)) {
+      touch_service_unsubscribe();
+    }
     if (state->focus_subscribed) {
       event_service_client_unsubscribe(&state->focus_event_info);
       state->focus_subscribed = false;
