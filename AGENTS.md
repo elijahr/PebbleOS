@@ -70,6 +70,60 @@ Forgetting steps 2 or 3 means the function compiles into the firmware
 but is invisible to the app SDK build, so third-party apps can't link
 against it.
 
+## Bangle.js 2 port (branch `bangle2-board`)
+
+This branch ports PebbleOS to a physical Bangle.js 2 (nRF52840, SMA-Q3).
+The full status table, load-bearing constraints, and ordered plan are in
+`~/.local/spellbook/docs/Users-eek-Development-PebbleOS/roadmap/bangle2-port-status-and-roadmap-2026-07-26.md`
+(read it first). Deep touch knowledge is in
+`.../plans/2026-07-26-bangle2-touchscreen-mode-handoff.md`.
+
+Load-bearing constraints (do not violate): bare-metal at flash `0x0` (no
+MBR, no SoftDevice, no bootloader, no PRF); resources on external SPI-NOR
+at `0x200000` and must match the build; SWD is the only delivery path (BLE
+DFU of custom firmware is impossible); never run `mass_erase`,
+`nrf52_recover`, or write UICR/FICR on the watch; the agent never pushes.
+
+### Roadmap checklist (ordered; R1 is the active feature)
+
+- [x] **R0 — Commit the touch bring-up pile.** Done: recovery blob,
+  de-shear recognizer + touchlog, 5 s-hold reset, atomic synthetic clicks.
+  Pushed to `elijahr/PebbleOS` fork only.
+- [ ] **R1 — BLE bring-up (ACTIVE).** Replace `CONFIG_BT_FW_STUB` with the
+  in-tree NimBLE host+controller (bare-metal on RADIO; no SoftDevice — the
+  asterix glue in `src/bluetooth-fw/nimble/` is the template). Sub-tasks:
+  real nRF RNG driver (replace `CONFIG_RNG_STUB`, blocks pairing);
+  LFCLK/HFXO + RADIO IRQ-priority setup; on-silicon validation only (Renode
+  cannot model RADIO); plan the emulator test split. Fix R3 before power
+  measurement.
+- [ ] **R2 — Display white-border / top-cutout anomaly.** Border constant is
+  BLACK yet renders white → suspect 3bpp polarity / bit-reversal in encode,
+  or Y-offset off-by-one. Bench debug.
+- [ ] **R3 — Tickless-idle time stall.** Clamp `xExpectedIdleTime` to
+  `RTC_TICKS_HZ * 60` in `vPortSuppressTicksAndSleep`; assert
+  `num_ticks < (1<<24)` in `rtc_alarm_set`. Fix before any power work.
+- [ ] **R4 — Touch Phase 2: absolute tap calibration.** N-point affine
+  tap-grid fit (chip coords → 176x176). Do NOT revert the atomic one-shot
+  click model. Drag-to-scroll can ship first.
+- [ ] **R5 — EXTI input-buffer audit.** `exti_configure_pin` passes
+  `p_pull_config=NULL`; central fix connects the input buffer. bangle2 is
+  safe now; shared `lsm6dso` / `npm1300` callers are exposed (upstream
+  hygiene).
+- [ ] **R6 — Renode / test debt.** Auto-regenerate `build_id_restore.resc`
+  after every build; parameterize hardcoded paths; add bangle2 to CI.
+  Decide keep-vs-gate for the 256-entry touchlog ring buffer.
+- [ ] **R7 — Charger wake + charge-pin semantics.** Add GPIO SENSE wake for
+  System OFF; fill the P0.23/P0.25 truth table; fix the incidental
+  `nrf_rtc_event_enable` offset-vs-mask misuse.
+- [ ] **R8 — Silicon-proof the remaining PARTIALs.** Battery curve, accel
+  shake/tap, mag calibration, backlight brightness. GPS and native 176x176
+  color platform stay PAUSED until reopened.
+- [ ] **R9 — Upstream prep.** Fix `git config user.email` (gitlint UC3
+  rejects the `noreply` address) + rewrite branch identity; SPDX + DCO `-s`
+  + `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` on every
+  commit, no issue refs; run `gitlint` + `clang-format`; resolve the
+  touchlog gate. DO NOT PUSH — the operator pushes upstream.
+
 ## Git rules
 
 Main rules:
