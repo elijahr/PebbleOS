@@ -78,11 +78,55 @@ The full status table, load-bearing constraints, and ordered plan are in
 (read it first). Deep touch knowledge is in
 `.../plans/2026-07-26-bangle2-touchscreen-mode-handoff.md`.
 
+Two warnings about that roadmap document, recorded here because it lives
+outside the repo and these corrections do not travel with a clone:
+
+- **It is stale on BLE, in a way that invites wasted work.** It predates the
+  bench validation: its subsystem table still shows BLE as STUBBED, and its
+  R1 text still says a real nRF RNG driver is required before pairing can
+  ship. Both are false. Decision D1 and bench result V2 established that the
+  NimBLE controller owns `NRF_RNG`, that `CONFIG_RNG_STUB=y` pairs
+  correctly, and that adding an RNG driver would CONTEND for the peripheral.
+  Do not write one. Where that document and the R0-R10 checklist below
+  disagree, the checklist wins.
+- **`R10` means two different things.** Here and on every cross-session
+  channel, R10 is "Bootloader + bootable PRF". In that roadmap document R10
+  and R11 were "shake to wake" and "full display size"; they were renumbered
+  to R12 and R13 on 2026-07-28, with R11 left unused to avoid a second
+  collision. Write `R10 (bootloader+PRF)` rather than bare `R10` until the
+  numbering is unified.
+
 Load-bearing constraints (do not violate): bare-metal at flash `0x0` (no
 MBR, no SoftDevice, no bootloader, no PRF); resources on external SPI-NOR
 at `0x200000` and must match the build; SWD is the only delivery path (BLE
 DFU of custom firmware is impossible); never run `mass_erase`,
 `nrf52_recover`, or write UICR/FICR on the watch; the agent never pushes.
+
+On `UICR.APPROTECT` specifically — this rule inverts the guidance you will
+find for newer nRF52 parts, so it explains itself rather than only
+prohibiting. The bench unit is **old-APPROTECT silicon**: measured over SWD
+2026-07-30, `FICR INFO.VARIANT` = `0x41414430` (ASCII `AAD0`, an `Axx`
+build code, not `Fx0`), with `UICR.APPROTECT` = `0xFFFFFFFF` (erased) while
+the debug port was fully functional — which is only possible on rev 1/2.
+On rev 3+ "improved APPROTECT" parts an erased UICR means PROTECTED, and
+you must write `UICR.APPROTECT = 0x5A` after an erase to keep the port
+open. **Here that is backwards: the erased state is the safe state, and
+writing `0x5A` ENABLES protection and permanently kills SWD** — the only
+recovery channel this board has. So: never write `UICR.APPROTECT` at all,
+and treat any procedure calling `0x5A` a "disable" value as rev 3+ guidance
+that does not apply. The firmware performs no run-time unlock that would
+change this: `APPROTECT` appears exactly once in the tree, as a comment in
+`src/fw/startup/startup_cortex_m.c`. Full detail and the measured register
+table: `docs/boards/bangle2/index.md`, "APPROTECT gate".
+
+Also note that external SPI-NOR has **zero backup coverage and cannot get
+any from a debug probe** — the part is not memory-mapped on this chip, so
+no probe reaches it regardless of quality. The BLE bond database
+(`gap_bonding_db` in `FLASH_REGION_FILESYSTEM`, mirrored into
+`FLASH_REGION_SHARED_PRF_STORAGE`) and the installed PRF image both live
+there. Only a custom flashloader driving SPIM2 from RAM can ever read or
+write that part, and it does not exist yet. Plan flashing decisions on the
+assumption that everything on external NOR is unrecoverable if lost.
 
 On PRF specifically: its absence is recorded in `boards/bangle2/Kconfig`
 (`config PRF_UNAVAILABLE`) — the blocker is the missing bootloader (nothing

@@ -77,6 +77,32 @@ mdw 0x10000104        ;# FICR INFO.VARIANT
 Decode the value against the current nRF52840 Product Specification and
 Nordic IN-133. Record this unit's VARIANT value in your notes.
 
+> **This unit is OLD-APPROTECT silicon. NEVER write `UICR.APPROTECT`.**
+>
+> Measured over SWD on 2026-07-30, so you do not have to decode anything
+> mid-restore:
+>
+> | Register | Address | Value |
+> |---|---|---|
+> | `FICR INFO.PART` | `0x10000100` | `0x00052840` (nRF52840) |
+> | `FICR INFO.VARIANT` | `0x10000104` | `0x41414430` = ASCII `AAD0` |
+> | `UICR.APPROTECT` | `0x10001208` | `0xFFFFFFFF` (erased) |
+>
+> `AAD0` is an `Axx` build code, not `Fx0`: this is the **rev 1/2 old
+> APPROTECT** case below. The debug port was fully functional at the same
+> moment the APPROTECT word read erased, which is only possible on old
+> silicon — on rev 3+ an erased UICR means PROTECTED. The firmware performs
+> no run-time unlock that could explain it otherwise: the string `APPROTECT`
+> appears exactly once in the whole tree, as a comment in
+> `src/fw/startup/startup_cortex_m.c`, and no code writes either
+> `UICR.APPROTECT` or the `APPROTECT.DISABLE` register.
+>
+> Therefore, on this watch, `mww 0x10001208 0x5A` is the brick command.
+> Writing `0x5A` ENABLES protection here. Skip that step entirely. The
+> erased state is the safe state. If someone hands you a procedure that
+> says `0x5A` is the "disable" value, they are reading rev 3+ guidance and
+> it is inverted for this unit.
+
 - Rev 3+ ("improved APPROTECT", `Fx0` build codes): the factory default
   is PROTECTED. After a UICR erase or mass erase, you MUST write
   `UICR.APPROTECT = 0x5A` (HwDisabled) BEFORE any reset. A rev 3+ part
@@ -88,7 +114,8 @@ Nordic IN-133. Record this unit's VARIANT value in your notes.
   probe the chip is effectively bricked.
 
 Get the revision right first. The write is mandatory on rev 3+ and
-forbidden on rev 1/2.
+forbidden on rev 1/2. For the bench unit this is settled: VARIANT `AAD0`,
+old APPROTECT, so the write is FORBIDDEN.
 
 ## Flash procedure (ordered — do not reorder)
 
@@ -330,6 +357,13 @@ confirms that too.
 3. On rev 3+ silicon ONLY, restore APPROTECT before any reset or power
    cycle.
 
+   > **NOT ON THIS WATCH.** The bench unit measured `AAD0` on 2026-07-30
+   > and is old-APPROTECT silicon (see the APPROTECT gate above). Writing
+   > `0x5A` here ENABLES protection and permanently kills SWD — the only
+   > recovery channel this board has. SKIP this entire step. Go straight
+   > from `mass_erase` to programming. The commands below are for rev 3+
+   > parts only; do not run them on this unit.
+
    PRIMARY method: the OpenOCD `nrf5` driver maps the UICR as a flash
    bank and manages NVMC WEN/READY itself. Confirm the installed
    OpenOCD supports this against its `nrf5` driver docs before first
@@ -346,6 +380,10 @@ confirms that too.
    ```
    mww 0x4001E504 1           ;# NVMC.CONFIG = WEN (write enable)
    mdw 0x4001E400             ;# poll NVMC.READY until it reads 1
+   ;# DO NOT RUN THE NEXT LINE ON THE BENCH UNIT (FICR VARIANT AAD0, old
+   ;# APPROTECT): there this write ENABLES protection and permanently
+   ;# kills SWD. Rev 3+ silicon only. Verify VARIANT for the unit in
+   ;# front of you first.
    mww 0x10001208 0x5A        ;# UICR.APPROTECT = 0x5A (HwDisabled)
    mdw 0x4001E400             ;# poll NVMC.READY == 1 (write completed)
    mww 0x4001E504 0           ;# NVMC.CONFIG = REN (back to read-only)
@@ -404,11 +442,25 @@ Cable-free restore is gone by design. Every restore needs the SWD rig.
 ## Brick insurance
 
 - Keep the step-1 SWD backups (internal + UICR) with checksums,
-  off-device.
+  off-device. Name every dump after the version string read OUT OF the
+  dumped image, never after the version you believe was flashed — on
+  2026-07-30 both pre-existing internal backups were checked against the
+  running firmware and NEITHER matched, so either one would have restored
+  the wrong image if reached for mid-flash.
 - Verify probe firmware >= V2J24 before the FIRST `mass_erase`, not
   after.
-- Never reset between a UICR erase and the APPROTECT restore write.
-- Record the unit's FICR VARIANT value the first time you read it.
+- On rev 3+ silicon, never reset between a UICR erase and the APPROTECT
+  restore write. **On this unit (old APPROTECT) there is no restore write**
+  — an erased UICR already means DISABLED. Skip it entirely; do not go
+  looking for the step.
+- **This unit's FICR VARIANT is `AAD0` (old APPROTECT), measured
+  2026-07-30.** The `UICR.APPROTECT = 0x5A` write is FORBIDDEN on it.
+  Re-read VARIANT for any other unit before assuming the same.
+- External SPI-NOR has NO backup and cannot get one from any debug probe,
+  however good — the 8 MB part is not memory-mapped on the nRF52840, it
+  hangs off GPIO driven by SPIM2. The BLE bonding store and the installed
+  PRF image live there. Until a SPIM2 flashloader exists, treat everything
+  on external NOR as unrecoverable if lost.
 
 ## Known limitations
 
