@@ -242,11 +242,12 @@ void test_menu_layer_drag__cleanup(void) {}
 
 // F-SM: content (2 rows * 44px = 88px) fits entirely inside the 168px frame, so the content
 // offset can never actually change (scroll_layer's own clamp holds it at 0) and the
-// offset-changed handler cannot run -- the offset/row/count assertions below hold no matter
-// what the reconciliation code does (or doesn't do), so they are not this test's real coverage.
-// The only falsifiable claim is the final one: a short-menu drag stroke must still be seen by
-// touch_click_suppress (real module, not a stub -- see the plan's green-mirage warning), so its
-// synthesized click is not spuriously dropped.
+// offset-changed handler cannot run -- the offset assertion below holds no matter what the
+// reconciliation code does (or doesn't do). The final assertion is unfalsifiable here too:
+// touch_click_suppress_mark_consumed() (scroll_layer.c) only fires when the offset actually
+// changes, which never happens for this 2-row menu, so should_drop_click() trivially returns
+// false regardless of whether suppression logic is correct. This test exercises the short-menu
+// code path without proving either assertion.
 void test_menu_layer_drag__short_menu_does_not_suppress_click(void) {
   prv_init_menu(2, true);
 
