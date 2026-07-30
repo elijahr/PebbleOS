@@ -1,0 +1,77 @@
+name: Build Firmware (bangle2 NimBLE)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  changes-firmware:
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      should-build: ${{ github.event_name == 'push' || steps.filter.outputs.src == 'true' }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            src:
+              - '.github/actions/**'
+              - '.github/workflows/build-firmware-bangle2-nimble.yml'
+              - 'boards/**'
+              - 'platform/**'
+              - 'resources/**'
+              - 'sdk/**'
+              - 'src/**'
+              - 'stored_apps/**'
+              - 'tools/**'
+              - 'third_party/**'
+              - 'tools/waf/**'
+              - 'waf'
+              - 'wscript'
+
+  build-bangle2-nimble:
+    needs: changes-firmware
+    if: needs.changes-firmware.outputs.should-build == 'true'
+    runs-on: ubuntu-24.04
+
+    container:
+      image: ghcr.io/coredevices/pebbleos-docker:v6
+
+    steps:
+      - name: Mark Github workspace as safe
+        run: git config --system --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Rebase onto target branch
+        uses: ./.github/actions/rebase
+        with:
+          submodules: true
+
+      - name: Install Python dependencies
+        run: |
+          pip install -U pip
+          pip install -r requirements.txt
+
+      - name: Configure (silicon NimBLE)
+        run: ./waf configure --board bangle2 -DCONFIG_BT_FW_NIMBLE=y
+
+      - name: Assert NimBLE selected
+        run: |
+          grep -E '^CONFIG_BT_FW_NIMBLE=y' build/.config
+          if grep -E '^CONFIG_BT_FW_STUB=y' build/.config; then
+            echo 'ERROR: stub backend still selected' >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: ./waf build
