@@ -13,6 +13,7 @@ clar(ctx,
 clar(ctx,
     sources_ant_glob = " src/fw/applib/graphics/gcolor_definitions.c" \
                        " src/fw/applib/graphics/gtypes.c" \
+                       " src/fw/applib/ui/app_window_recognizer_glue.c" \
                        " src/fw/applib/ui/app_window_stack.c" \
                        " src/fw/applib/ui/layer.c" \
                        " src/fw/applib/ui/recognizer/recognizer.c" \

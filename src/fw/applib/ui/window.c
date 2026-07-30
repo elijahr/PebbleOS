@@ -6,6 +6,7 @@
 #include "applib/app_logging.h"
 #include "applib/graphics/graphics.h"
 #include "applib/ui/app_window_click_glue.h"
+#include "applib/ui/app_window_recognizer_glue.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/click.h"
 #include "applib/ui/layer.h"
@@ -234,6 +235,9 @@ static void prv_call_click_provider(Window *window) {
   window->is_waiting_for_click_config = false;
   app_click_config_setup_with_window(prv_get_current_click_manager(), window);
   window->is_click_configured = true;
+  // Task 8 (impl plan section 12): appear seam. Runs for KernelMain modal windows too; the
+  // glue no-ops when window_get_recognizer_manager(window) returns NULL.
+  app_window_recognizer_glue_window_focused(window);
 }
 
 static void prv_check_is_in_click_config_provider(Window *window, char *type) {
@@ -424,6 +428,9 @@ void window_set_on_screen(Window *window, bool new_on_screen, bool call_window_a
     window->is_render_scheduled = false;
     window->is_waiting_for_click_config = false;
     window->is_click_configured = false;
+    // Task 8 (impl plan section 12): off-screen choke point. The ONLY site that cancels,
+    // resets, and un-sets the recognizer manager's window -- never the disappear WindowHandler.
+    app_window_recognizer_glue_window_off_screen(window);
   }
 
   if (call_window_appear_handlers) {

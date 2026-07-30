@@ -55,6 +55,13 @@ typedef struct AppFocusState {
   EventServiceInfo did_focus_info;
 } AppFocusState;
 
+//! Task 8 (impl plan section 12): app_window_recognizer_glue.c's per-app subscription state.
+//! Scoped to AppState lifetime, not a persistent global, matching the recognizer manager.
+typedef struct AppWindowRecognizerGlueState {
+  EventServiceInfo focus_event_info;
+  bool focus_subscribed;
+} AppWindowRecognizerGlueState;
+
 typedef struct TextRenderState {
   SpecialCodepointHandlerCb special_codepoint_handler_cb;
   void *special_codepoint_handler_context;
@@ -142,6 +149,8 @@ RecognizerManager *app_state_get_recognizer_manager(void);
 void app_state_recognizer_attach_count_inc(void);
 void app_state_recognizer_attach_count_dec(void);
 uint16_t app_state_recognizer_attach_count(void);
+
+AppWindowRecognizerGlueState *app_state_get_recognizer_glue_state(void);
 
 #if CONFIG_TOUCH_NAV_BUTTONS
 TouchClickSuppressState *app_state_get_touch_click_suppress_state(void);

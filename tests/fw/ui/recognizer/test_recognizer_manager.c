@@ -3,8 +3,11 @@
 
 #include "clar.h"
 
+#include "applib/touch_service.h"
+#include "applib/ui/app_window_recognizer_glue.h"
 #include "applib/ui/layer.h"
 #include "applib/ui/window.h"
+#include "applib/ui/window_stack_private.h"
 #include "applib/ui/recognizer/recognizer.h"
 #include "applib/ui/recognizer/recognizer_impl.h"
 #include "applib/ui/recognizer/recognizer_list.h"
@@ -16,6 +19,7 @@
 // Stubs
 #include "stubs_app_install_manager.h"
 #include "stubs_app_state.h"
+#include "stubs_event_service_client.h"
 #include "stubs_gbitmap.h"
 #include "stubs_graphics.h"
 #include "stubs_graphics_context.h"
@@ -36,6 +40,12 @@
 #include "fake_pebble_tasks.h"
 
 #include "test_recognizer_impl.h"
+
+// Task 8 (impl plan section 12): touch_service.c is not compiled by this suite -- neither
+// symbol is exercised (the subscription-gating leg is a deliberate hole, covered by QEMU/
+// silicon per the plan), only linked because app_window_recognizer_glue.c calls them.
+void touch_service_subscribe(TouchServiceHandler handler, void *context) {}
+void touch_service_unsubscribe(void) {}
 
 // Minimal collaborator overrides for the real window/window_stack/modal_manager closure
 // (mirrors test_window_stack.c); none of these paths are under test here
@@ -101,6 +111,14 @@ RecognizerList *app_state_get_recognizer_list(void) {
 
 RecognizerManager *app_state_get_recognizer_manager(void) {
   return s_manager;
+}
+
+// Task 8: app_window_recognizer_glue.c's per-app subscription state fixture. Not in
+// stubs_app_state.h (Section 2.3 rule): only this suite compiles the glue.
+static AppWindowRecognizerGlueState s_recognizer_glue_state;
+
+AppWindowRecognizerGlueState *app_state_get_recognizer_glue_state(void) {
+  return &s_recognizer_glue_state;
 }
 
 typedef struct RecognizerHandled {
@@ -188,6 +206,7 @@ void test_recognizer_manager__initialize(void) {
   s_test_impl_data = (TestImplData){};
   s_app_list = NULL;
   s_manager = NULL;
+  s_recognizer_glue_state = (AppWindowRecognizerGlueState){};
   s_dummy_impl = (RecognizerImpl) {
     .handle_touch_event = prv_handle_touch_event,
     .cancel = prv_cancel,
@@ -569,12 +588,18 @@ void test_recognizer_manager__handle_touch_event(void) {
   cl_assert_equal_i(recognizers[3]->state, RecognizerState_Possible);
   cl_assert_equal_i(recognizers[4]->state, RecognizerState_Possible);
 
-  // Same as above. Different event type
+  // Task 8 (impl plan section 12 + understanding-touchscreen-tasks-8-10, operator decision 1):
+  // this assertion previously pinned "manager stays RecognizersActive after Liftoff" -- that
+  // was the gap the Liftoff branch closes, not a contract to preserve: with every recognizer
+  // still Possible, nothing completed the gesture, so the manager must return to
+  // WaitForTouchdown instead of latching active_layer across strokes. Rewritten (not
+  // deleted) per the Task 4 assertion-preservation discipline, with this justification.
   e.type = TouchEvent_Liftoff;
   recognizer_manager_handle_touch_event(&e, &manager);
   prv_compare_recognizers_processed((int[]) {4, 0, 3, 1}, 4, &s_recognizers_handled);
-  cl_assert_equal_p(manager.active_layer, &layer_c);
-  cl_assert_equal_i(manager.state, RecognizerManagerState_RecognizersActive);
+  prv_compare_recognizers_processed((int[]){4, 0, 3, 1}, 4, &s_recognizers_reset);
+  cl_assert_equal_p(manager.active_layer, NULL);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_WaitForTouchdown);
   cl_assert_equal_i(recognizers[0]->state, RecognizerState_Possible);
   cl_assert_equal_i(recognizers[1]->state, RecognizerState_Possible);
   cl_assert_equal_i(recognizers[3]->state, RecognizerState_Possible);
@@ -974,11 +999,16 @@ void test_recognizer_manager__cancel_touches_cancels_live_recognizer(void) {
   s_app_list = &app_list;
   recognizer_add_to_list(r, &app_list);
 
-  // App-list-only manager: no window is attached, so the touchdown dispatches
-  // straight to the app recognizer list
+  // App-list recognizer, dispatched via a manager pointed at a real (empty) window. Task 8's
+  // NULL-window guard on recognizer_manager_handle_touch_event makes manager->window == NULL a
+  // hard no-op (impl plan section 12 + operator disambiguation answer 2), so this arrange step
+  // now needs a real window for the touchdown to reach the app-list recognizer at all; the
+  // assertions below (app-list dispatch, cancel_touches semantics) are unchanged.
+  Window window = {};
+  layer_init(&window.layer, &GRectZero);
   RecognizerManager manager;
   recognizer_manager_init(&manager);
-  manager.window = NULL;
+  manager.window = &window;
 
   // The recognizer transitions to Started when it handles the touchdown, so the
   // manager records it as the triggered recognizer
@@ -1448,4 +1478,251 @@ void test_recognizer_manager__detach_never_attached_does_not_decrement(void) {
 
   recognizer_destroy(r);
   cl_assert_equal_b(destroyed, true);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Task 8 (impl plan section 12 + understanding-touchscreen-tasks-8-10): NULL-window guard,
+// the Liftoff branch, and the app_window_recognizer_glue.c lifecycle wiring.
+
+void test_recognizer_manager__null_window_dispatch_is_noop(void) {
+  const int k_rec_count = 1;
+  s_dummy_impl.handle_touch_event = prv_handle_touch_event_test;
+  s_dummy_impl.reset = prv_reset_test;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  RecognizerList app_list = {};
+  s_app_list = &app_list;
+  recognizer_add_to_list(recognizers[0], &app_list);
+
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  manager.window = NULL;
+  // Intentionally poisoned: a non-NULL sentinel the guard must never dereference or overwrite.
+  manager.active_layer = (Layer *)0x1;
+
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  recognizer_manager_handle_touch_event(&e, &manager);
+
+  prv_compare_recognizers_processed(NULL, 0, &s_recognizers_handled);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_WaitForTouchdown);
+  cl_assert_equal_p(manager.active_layer, (Layer *)0x1);
+
+  // A NULL manager pointer itself must also be a safe no-op.
+  recognizer_manager_handle_touch_event(&e, NULL);
+
+  prv_destroy_recognizers(recognizers, k_rec_count);
+}
+
+void test_recognizer_manager__liftoff_nothing_completed_resets_to_wait_for_touchdown(void) {
+  const int k_rec_count = 1;
+  s_dummy_impl.handle_touch_event = prv_handle_touch_event_test;
+  s_dummy_impl.reset = prv_reset_test;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  Window window = {};
+  layer_init(&window.layer, &ROOT_FRAME);
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  manager.window = &window;
+
+  Layer layer_a;
+  layer_init(&layer_a, &LAYER_A_FRAME);
+  layer_add_child(&window.layer, &layer_a);
+  recognizer_add_to_list(recognizers[0], &layer_a.recognizer_list);
+
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  prv_set_touch_pos(&e, POINT_IN_A);
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_p(manager.active_layer, &layer_a);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_RecognizersActive);
+  prv_clear_recognizers_processed(&s_recognizers_handled);
+
+  e.type = TouchEvent_PositionUpdate;
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_i(recognizers[0]->state, RecognizerState_Possible);
+  prv_clear_recognizers_processed(&s_recognizers_handled);
+
+  // Liftoff with the recognizer still Possible: nothing completed the gesture, so the manager
+  // must return to WaitForTouchdown instead of latching active_layer across strokes.
+  e.type = TouchEvent_Liftoff;
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_WaitForTouchdown);
+  cl_assert_equal_p(manager.active_layer, NULL);
+  cl_assert_equal_p(manager.triggered, NULL);
+  cl_assert_equal_i(recognizers[0]->state, RecognizerState_Possible);
+
+  layer_detach_recognizer(&layer_a, recognizers[0]);
+  prv_destroy_recognizers(recognizers, k_rec_count);
+}
+
+void test_recognizer_manager__liftoff_completed_gesture_uses_existing_reset_path(void) {
+  const int k_rec_count = 1;
+  s_dummy_impl.handle_touch_event = prv_handle_touch_event_test;
+  s_dummy_impl.reset = prv_reset_test;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  Window window = {};
+  layer_init(&window.layer, &ROOT_FRAME);
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  manager.window = &window;
+
+  Layer layer_a;
+  layer_init(&layer_a, &LAYER_A_FRAME);
+  layer_add_child(&window.layer, &layer_a);
+  recognizer_add_to_list(recognizers[0], &layer_a.recognizer_list);
+
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  prv_set_touch_pos(&e, POINT_IN_A);
+  recognizer_manager_handle_touch_event(&e, &manager);
+  prv_clear_recognizers_processed(&s_recognizers_handled);
+
+  // The recognizer completes exactly at Liftoff: the pre-existing
+  // prv_fail_then_reset_if_no_active_recognizers path must still fire the Completed
+  // transition and reset the manager -- the new Liftoff branch must not short-circuit it
+  // (it is a no-op here because the old path already reached WaitForTouchdown).
+  e.type = TouchEvent_Liftoff;
+  s_next_state = RecognizerState_Completed;
+  s_idx_to_change = 0;
+  recognizer_manager_handle_touch_event(&e, &manager);
+
+  prv_compare_recognizers_processed((int[]){0}, 1, &s_recognizers_handled);
+  prv_compare_recognizers_processed((int[]){0}, 1, &s_recognizers_reset);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_WaitForTouchdown);
+  cl_assert_equal_p(manager.active_layer, NULL);
+  cl_assert_equal_p(manager.triggered, NULL);
+  cl_assert_equal_i(recognizers[0]->state, RecognizerState_Possible);
+
+  layer_detach_recognizer(&layer_a, recognizers[0]);
+  prv_destroy_recognizers(recognizers, k_rec_count);
+}
+
+void test_recognizer_manager__appear_seam_set_before_cancel(void) {
+  const int k_rec_count = 1;
+  s_dummy_impl.handle_touch_event = prv_handle_touch_event_test;
+  s_dummy_impl.reset = prv_reset_test;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  Window window_a = {};
+  layer_init(&window_a.layer, &ROOT_FRAME);
+  Window window_b = {};
+  layer_init(&window_b.layer, &ROOT_FRAME);
+
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  s_manager = &manager;
+  manager.window = &window_a;
+
+  Layer layer_a;
+  layer_init(&layer_a, &LAYER_A_FRAME);
+  layer_add_child(&window_a.layer, &layer_a);
+  recognizer_add_to_list(recognizers[0], &layer_a.recognizer_list);
+
+  // A live stroke is triggered on window A.
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  prv_set_touch_pos(&e, POINT_IN_A);
+  s_next_state = RecognizerState_Started;
+  s_idx_to_change = 0;
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_RecognizersTriggered);
+  cl_assert_equal_i(recognizers[0]->state, RecognizerState_Started);
+
+  // Window B appears: the glue must set the new window BEFORE cancelling, so the cancel walk
+  // still reaches window A's live recognizer via the manager's (still-A) active_layer.
+  app_window_recognizer_glue_window_focused(&window_b);
+
+  cl_assert_equal_i(recognizers[0]->state, RecognizerState_Cancelled);
+  cl_assert_equal_p(manager.window, &window_b);
+
+  layer_detach_recognizer(&layer_a, recognizers[0]);
+  prv_destroy_recognizers(recognizers, k_rec_count);
+}
+
+void test_recognizer_manager__off_screen_choke_point_invariant(void) {
+  const int k_rec_count = 1;
+  s_dummy_impl.handle_touch_event = prv_handle_touch_event_test;
+  s_dummy_impl.reset = prv_reset_test;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  Window window_a = {};
+  layer_init(&window_a.layer, &ROOT_FRAME);
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  s_manager = &manager;
+  manager.window = &window_a;
+
+  Layer layer_a;
+  layer_init(&layer_a, &LAYER_A_FRAME);
+  layer_add_child(&window_a.layer, &layer_a);
+  recognizer_add_to_list(recognizers[0], &layer_a.recognizer_list);
+
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  prv_set_touch_pos(&e, POINT_IN_A);
+  s_next_state = RecognizerState_Started;
+  s_idx_to_change = 0;
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_RecognizersTriggered);
+
+  app_window_recognizer_glue_window_off_screen(&window_a);
+
+  cl_assert_equal_p(manager.window, NULL);
+  cl_assert_equal_p(manager.active_layer, NULL);
+  cl_assert_equal_p(manager.triggered, NULL);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_WaitForTouchdown);
+
+  // A window that isn't the manager's current window must be a no-op (guards against the
+  // choke point double-resetting when called from the wrong site).
+  app_window_recognizer_glue_window_off_screen(&window_a);
+  cl_assert_equal_p(manager.window, NULL);
+
+  layer_detach_recognizer(&layer_a, recognizers[0]);
+  prv_destroy_recognizers(recognizers, k_rec_count);
+}
+
+void prv_focus_event_handler(PebbleEvent *e, void *context);
+
+void test_recognizer_manager__focus_rows(void) {
+  const int k_rec_count = 1;
+  s_dummy_impl.handle_touch_event = prv_handle_touch_event_test;
+  s_dummy_impl.reset = prv_reset_test;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  Window window_a = {};
+  layer_init(&window_a.layer, &ROOT_FRAME);
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  s_manager = &manager;
+  manager.window = &window_a;
+
+  Layer layer_a;
+  layer_init(&layer_a, &LAYER_A_FRAME);
+  layer_add_child(&window_a.layer, &layer_a);
+  recognizer_add_to_list(recognizers[0], &layer_a.recognizer_list);
+
+  TouchEvent e = {.type = TouchEvent_Touchdown};
+  prv_set_touch_pos(&e, POINT_IN_A);
+  s_next_state = RecognizerState_Started;
+  s_idx_to_change = 0;
+  recognizer_manager_handle_touch_event(&e, &manager);
+  cl_assert_equal_i(recognizers[0]->state, RecognizerState_Started);
+
+  // Losing focus mid-stroke cancels the live recognizer but leaves window/state untouched.
+  PebbleEvent will_lose_focus = {.app_focus = {.in_focus = false}};
+  prv_focus_event_handler(&will_lose_focus, NULL);
+  cl_assert_equal_i(recognizers[0]->state, RecognizerState_Cancelled);
+  cl_assert_equal_p(manager.window, &window_a);
+
+  // Regaining focus repoints the manager at the top window and fully resets it.
+  WindowStackItem top_item = {.window = &window_a};
+  *app_state_get_window_stack() = (WindowStack){.list_head = &top_item.list_node};
+  PebbleEvent will_gain_focus = {.app_focus = {.in_focus = true}};
+  prv_focus_event_handler(&will_gain_focus, NULL);
+  cl_assert_equal_p(manager.window, &window_a);
+  cl_assert_equal_i(manager.state, RecognizerManagerState_WaitForTouchdown);
+  cl_assert_equal_p(manager.active_layer, NULL);
+  cl_assert_equal_p(manager.triggered, NULL);
+  cl_assert_equal_i(recognizers[0]->state, RecognizerState_Possible);
+
+  layer_detach_recognizer(&layer_a, recognizers[0]);
+  prv_destroy_recognizers(recognizers, k_rec_count);
 }

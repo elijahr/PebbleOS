@@ -273,6 +273,11 @@ static void prv_cleanup_state_change(RecognizerManager *manager, Recognizer *tri
 
 void recognizer_manager_handle_touch_event(const TouchEvent *touch_event, void *context) {
   RecognizerManager *manager = context;
+  // Task 8 (impl plan section 12 + operator disambiguation answer 2): must run before
+  // window_get_root_layer(manager->window) below, which is otherwise UB on a NULL window.
+  if (!manager || !manager->window) {
+    return;
+  }
 
   if (touch_event->type == TouchEvent_Touchdown) {
     Layer *root = window_get_root_layer(manager->window);
@@ -294,6 +299,19 @@ void recognizer_manager_handle_touch_event(const TouchEvent *touch_event, void *
   if (manager->state != RecognizerManagerState_WaitForTouchdown) {
     Recognizer *triggered = prv_dispatch_touch_event_to_all_recognizers(manager, touch_event);
     prv_cleanup_state_change(manager, triggered);
+
+    // Task 8 Liftoff branch (understanding-touchscreen-tasks-8-10, operator decision 1): a
+    // post-dispatch check, run AFTER the Liftoff event above is delivered to every recognizer
+    // in the active set, so a recognizer that legitimately completes AT Liftoff still gets to
+    // do so via the existing reset path (guarded out below by manager->state already being
+    // WaitForTouchdown in that case). If nothing completed the stroke -- manager->triggered is
+    // NULL and the manager didn't already reset -- return to WaitForTouchdown instead of
+    // latching active_layer across strokes (e.g. a drag that never crosses its start
+    // threshold, which never explicitly fails and would otherwise sit in Possible forever).
+    if ((touch_event->type == TouchEvent_Liftoff) &&
+        (manager->state != RecognizerManagerState_WaitForTouchdown) && !manager->triggered) {
+      prv_reset(manager);
+    }
   }
 }
 
