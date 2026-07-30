@@ -31,10 +31,10 @@ config TOUCH_WIDGET_DRAG
       synthesized navigation buttons. Deliberately decoupled from
       TOUCH_NAV_BUTTONS: a board can drag-scroll widgets with or without
       synthetic button emulation.
-      MenuLayer selection is NOT yet reconciled with a direct drag: the
-      content offset moves but the selected row does not follow it, so a
-      tap after dragging a menu can activate the wrong row. Tracked as
-      follow-up work; do not rely on MenuLayer drag-selection yet.
+      MenuLayer reconciles its selection against a drag-moved content
+      offset: if the selected row scrolls out of view, selection moves to
+      the nearest row still visible, so a tap after dragging a menu
+      activates the row the user actually sees selected.
 
 module = SERVICE_TOUCH
 module-str = Touch

@@ -29,6 +29,11 @@
 //! @return True if there was an animation to cancel, false otherwise
 static bool prv_cancel_selection_animation(MenuLayer *menu_layer);
 
+static void prv_menu_layer_walk_upward_from_iterator(MenuIterator *it);
+static void prv_menu_layer_walk_downward_from_iterator(MenuIterator *it);
+static void prv_menu_layer_iterator_noop_callback(MenuIterator *it);
+static void prv_announce_selection_changed(MenuLayer *menu_layer, MenuIndex prev_index);
+
 //////////////////////
 // Menu Layer
 //
@@ -39,12 +44,85 @@ static bool prv_cancel_selection_animation(MenuLayer *menu_layer);
 // Inside the MenuLayer's update_proc (Layer drawing callback), it will call out to its client for each row
 // that needs to be drawn, until all visible rows have been drawn.
 
+#if CONFIG_TOUCH_WIDGET_DRAG
+//! Cursor state used to find the nearest row still (at least partially) inside the visible
+//! content band after a drag moved the content offset out from under the current selection.
+typedef struct MenuOffsetReconcileIterator {
+  MenuIterator it;
+  int16_t content_top_y;
+  int16_t content_bottom_y;
+  bool found;
+} MenuOffsetReconcileIterator;
+
+static void prv_menu_layer_offset_reconcile_row_callback(MenuIterator *iterator) {
+  MenuOffsetReconcileIterator *it = (MenuOffsetReconcileIterator *)iterator;
+  const int16_t row_top = it->it.cursor.y;
+  const int16_t row_bottom = row_top + it->it.cursor.h;
+  if (row_bottom > it->content_top_y && row_top < it->content_bottom_y) {
+    it->it.menu_layer->selection = it->it.cursor;
+    it->found = true;
+    it->it.should_continue = false;
+  }
+}
+#endif
+
 static void prv_menu_scroll_offset_changed_handler(ScrollLayer *scroll_layer,
                                                    MenuLayer *menu_layer) {
+  (void)scroll_layer;
+#if CONFIG_TOUCH_WIDGET_DRAG
+  menu_layer->in_offset_reconcile = true;
+
+  const GSize frame_size = menu_layer->scroll_layer.layer.frame.size;
+  const int16_t content_top_y = -scroll_layer_get_content_offset(&menu_layer->scroll_layer).y;
+  const int16_t content_bottom_y = content_top_y + frame_size.h;
+
+  const int16_t selection_top = menu_layer->selection.y;
+  const int16_t selection_bottom = selection_top + menu_layer->selection.h;
+  // "At least partially inside the band" -- overlap, not full containment.
+  const bool selection_visible =
+      (selection_bottom > content_top_y) && (selection_top < content_bottom_y);
+
+  if (!selection_visible) {
+    const MenuIndex prev_index = menu_layer->selection.index;
+    // Selection is above the viewport (content scrolled down past it): search forward
+    // (downward through the menu) for the nearest now-visible row. Otherwise the selection is
+    // below the viewport: search backward (upward).
+    const bool above_viewport = (selection_bottom <= content_top_y);
+
+    MenuOffsetReconcileIterator recon_it = {
+        .it =
+            {
+                .menu_layer = menu_layer,
+                .cursor = menu_layer->selection,
+                .row_callback_after_geometry = prv_menu_layer_offset_reconcile_row_callback,
+                .section_callback = prv_menu_layer_iterator_noop_callback,
+            },
+        .content_top_y = content_top_y,
+        .content_bottom_y = content_bottom_y,
+        .found = false,
+    };
+
+    if (above_viewport) {
+      prv_menu_layer_walk_downward_from_iterator(&recon_it.it);
+    } else {
+      prv_menu_layer_walk_upward_from_iterator(&recon_it.it);
+    }
+
+    if (recon_it.found && menu_index_compare(&menu_layer->selection.index, &prev_index) != 0) {
+      prv_announce_selection_changed(menu_layer, prev_index);
+    }
+  }
+
+  menu_layer->in_offset_reconcile = false;
+#else
   // TODO: we might need to propagate this event down to MenuLayerCallbacks
+#endif
 }
 
-static void prv_menu_select_click_handler(ClickRecognizerRef recognizer, MenuLayer *menu_layer) {
+// Not static: exercised directly by tests the same way menu_up_click_handler and
+// menu_down_click_handler are (it is otherwise only reachable through the click config
+// provider, which test suites stub out).
+void menu_select_click_handler(ClickRecognizerRef recognizer, MenuLayer *menu_layer) {
   // If the selection animation is running, complete it. Note that 2.x apps don't have a selection
   // animation.
   if (menu_layer->animation.animation) {
@@ -197,7 +275,7 @@ static void prv_menu_click_config_provider(MenuLayer *menu_layer) {
   window_single_repeating_click_subscribe(BUTTON_ID_UP, 100 /*ms*/,
       (ClickHandler)menu_up_click_handler);
   if (menu_layer->callbacks.select_click) {
-    window_single_click_subscribe(BUTTON_ID_SELECT, (ClickHandler)prv_menu_select_click_handler);
+    window_single_click_subscribe(BUTTON_ID_SELECT, (ClickHandler)menu_select_click_handler);
   }
   if (menu_layer->callbacks.select_long_click) {
     window_long_click_subscribe(BUTTON_ID_SELECT, 0,
@@ -984,6 +1062,13 @@ static MenuRowAlign prv_corrected_scroll_align(MenuLayer *menu_layer, MenuRowAli
 static void prv_menu_layer_update_selection_scroll_position(MenuLayer *menu_layer,
                                                             MenuRowAlign scroll_align,
                                                             bool animated) {
+  if (menu_layer->in_offset_reconcile) {
+    // A selection_changed callback fired from inside offset reconciliation legally called back
+    // into e.g. menu_layer_set_selected_index(). The selection index updates, but the content
+    // offset must not re-derive from it mid-drag -- it only moves when the drag itself moves it.
+    return;
+  }
+
   scroll_align = prv_corrected_scroll_align(menu_layer, scroll_align);
 
   if (scroll_align != MenuRowAlignNone) {

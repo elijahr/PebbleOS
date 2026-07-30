@@ -423,6 +423,13 @@ typedef struct MenuLayer {
   //! If True, a vibration will occur when cursor is getting blocked at the top or bottom
   bool scroll_vibe_on_blocked:1;
 
+  //! @internal
+  //! Set while prv_menu_scroll_offset_changed_handler is reconciling the selection against a
+  //! drag-moved content offset, so a selection_changed callback that runs mid-reconciliation
+  //! cannot trigger a re-derivation of the content offset (the offset only moves when the drag
+  //! itself moves it).
+  bool in_offset_reconcile : 1;
+
   //! Add some padding to keep track of the \ref MenuLayer size budget.
   //! As long as the size stays within this budget, 2.x apps can safely use the 3.x MenuLayer type.
   //! When padding is removed, the assertion below should also be removed.
