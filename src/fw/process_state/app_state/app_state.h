@@ -60,6 +60,10 @@ typedef struct AppFocusState {
 typedef struct AppWindowRecognizerGlueState {
   EventServiceInfo focus_event_info;
   bool focus_subscribed;
+  // Tracks the glue's own touch_service subscription, edge-triggered rather than
+  // count-value-triggered: the attach counter's value alone can't distinguish a genuine
+  // 0->1 attach from a 2->1 detach, both of which leave new_count == 1 (impl plan section 12).
+  bool touch_subscribed;
 } AppWindowRecognizerGlueState;
 
 typedef struct TextRenderState {

@@ -41,11 +41,23 @@
 
 #include "test_recognizer_impl.h"
 
-// Task 8 (impl plan section 12): touch_service.c is not compiled by this suite -- neither
-// symbol is exercised (the subscription-gating leg is a deliberate hole, covered by QEMU/
-// silicon per the plan), only linked because app_window_recognizer_glue.c calls them.
-void touch_service_subscribe(TouchServiceHandler handler, void *context) {}
-void touch_service_unsubscribe(void) {}
+// touch_service.c is not compiled by this suite, so these stubs stand in for it. They count
+// calls and capture the subscribed handler so tests can verify
+// app_window_recognizer_glue_attach_count_changed's subscribe/unsubscribe gating (0->1
+// subscribes, N->N+-1 for N>=1 does not, 1->0 unsubscribes) without exercising the real
+// touch_service.c (and therefore without observing its sys_touch_reset() call -- not
+// re-invoking touch_service_subscribe is what rules that out).
+static int s_touch_subscribe_call_count;
+static int s_touch_unsubscribe_call_count;
+static TouchServiceHandler s_touch_subscribe_captured_handler;
+
+void touch_service_subscribe(TouchServiceHandler handler, void *context) {
+  s_touch_subscribe_call_count++;
+  s_touch_subscribe_captured_handler = handler;
+}
+void touch_service_unsubscribe(void) {
+  s_touch_unsubscribe_call_count++;
+}
 
 // Minimal collaborator overrides for the real window/window_stack/modal_manager closure
 // (mirrors test_window_stack.c); none of these paths are under test here
@@ -207,6 +219,10 @@ void test_recognizer_manager__initialize(void) {
   s_app_list = NULL;
   s_manager = NULL;
   s_recognizer_glue_state = (AppWindowRecognizerGlueState){};
+  s_touch_subscribe_call_count = 0;
+  s_touch_unsubscribe_call_count = 0;
+  s_touch_subscribe_captured_handler = NULL;
+  *app_state_get_touch_service_state() = (TouchServiceState){};
   s_dummy_impl = (RecognizerImpl) {
     .handle_touch_event = prv_handle_touch_event,
     .cancel = prv_cancel,
@@ -1865,4 +1881,75 @@ void test_recognizer_manager__detach_from_non_owner_same_manager_is_safe_noop(vo
 
   layer_detach_recognizer(&layer_a, recognizers[0]);
   prv_destroy_recognizers(recognizers, k_rec_count);
+}
+
+// Series-level audit finding (impl plan section 12: "on 0->1" / "on 1->0"). The subscribe leg
+// gated on new_count == 1, which is reachable from BOTH a genuine 0->1 transition and a 2->1
+// transition (e.g. an app with two ScrollLayers destroying one). The cases below pin the
+// intended edge-triggered behavior; test_recognizer_manager__attach_count_two_to_one_does_not_
+// resubscribe is the one that reproduces the defect.
+static void prv_other_touch_handler(const TouchEvent *event, void *context) {}
+
+void test_recognizer_manager__attach_count_zero_to_one_subscribes(void) {
+  cl_assert_equal_i(s_touch_subscribe_call_count, 0);
+
+  app_window_recognizer_glue_attach_count_changed(1);  // 0 -> 1
+
+  cl_assert_equal_i(s_touch_subscribe_call_count, 1);
+  cl_assert(s_touch_subscribe_captured_handler != NULL);
+  cl_assert_equal_i(s_touch_unsubscribe_call_count, 0);
+}
+
+void test_recognizer_manager__attach_count_one_to_two_does_not_resubscribe(void) {
+  app_window_recognizer_glue_attach_count_changed(1);  // 0 -> 1
+  cl_assert_equal_i(s_touch_subscribe_call_count, 1);
+
+  app_window_recognizer_glue_attach_count_changed(2);  // 1 -> 2
+
+  cl_assert_equal_i(s_touch_subscribe_call_count, 1);
+  cl_assert_equal_i(s_touch_unsubscribe_call_count, 0);
+}
+
+// The defect: a two-ScrollLayer app destroying one goes 2 -> 1, which must NOT be treated as
+// a fresh 0 -> 1 attach. Before the fix this re-subscribes (a second touch_service_subscribe
+// call), which would mid-session-reset the touch driver and re-clobber the raw_handler slot.
+void test_recognizer_manager__attach_count_two_to_one_does_not_resubscribe(void) {
+  app_window_recognizer_glue_attach_count_changed(1);  // 0 -> 1
+  cl_assert_equal_i(s_touch_subscribe_call_count, 1);
+  app_window_recognizer_glue_attach_count_changed(2);  // 1 -> 2
+  cl_assert_equal_i(s_touch_subscribe_call_count, 1);
+
+  app_window_recognizer_glue_attach_count_changed(1);  // 2 -> 1
+
+  cl_assert_equal_i(s_touch_subscribe_call_count, 1);
+  cl_assert_equal_i(s_touch_unsubscribe_call_count, 0);
+}
+
+void test_recognizer_manager__attach_count_one_to_zero_unsubscribes(void) {
+  app_window_recognizer_glue_attach_count_changed(1);  // 0 -> 1
+  cl_assert_equal_i(s_touch_subscribe_call_count, 1);
+  cl_assert(s_touch_subscribe_captured_handler != NULL);
+
+  // The local touch_service_subscribe stub stands in for touch_service.c, so it doesn't
+  // install the handler into raw_handler itself; simulate what the real implementation
+  // would have done, so the unsubscribe leg's read-back guard sees a match.
+  app_state_get_touch_service_state()->raw_handler = s_touch_subscribe_captured_handler;
+
+  app_window_recognizer_glue_attach_count_changed(0);  // 1 -> 0
+
+  cl_assert_equal_i(s_touch_unsubscribe_call_count, 1);
+}
+
+// The unsubscribe leg's existing read-back guard: an app that called touch_service_subscribe()
+// itself after the glue now owns the single raw_handler slot, so the 1 -> 0 transition must not
+// clobber it.
+void test_recognizer_manager__attach_count_one_to_zero_guard_skips_foreign_handler(void) {
+  app_window_recognizer_glue_attach_count_changed(1);  // 0 -> 1
+  cl_assert_equal_i(s_touch_subscribe_call_count, 1);
+
+  app_state_get_touch_service_state()->raw_handler = prv_other_touch_handler;
+
+  app_window_recognizer_glue_attach_count_changed(0);  // 1 -> 0
+
+  cl_assert_equal_i(s_touch_unsubscribe_call_count, 0);
 }
