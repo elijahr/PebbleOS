@@ -34,5 +34,11 @@
 #define LEGACY_3X_DISP_COLS PBL_DISPLAY_WIDTH
 #define LEGACY_3X_DISP_ROWS PBL_DISPLAY_HEIGHT
 
+// bangle2 can build at either 1bpp or 8bpp (unlike the mono-only or
+// color-only boards), so the framebuffer size must track the active depth.
+#if CONFIG_SCREEN_COLOR_DEPTH_BITS == 8
+#define DISPLAY_FRAMEBUFFER_BYTES (PBL_DISPLAY_WIDTH * PBL_DISPLAY_HEIGHT)
+#else
 #define DISPLAY_FRAMEBUFFER_BYTES \
     (ROUND_TO_MOD_CEIL(PBL_DISPLAY_WIDTH, 32) / 8 * PBL_DISPLAY_HEIGHT)
+#endif
