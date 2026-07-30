@@ -602,15 +602,23 @@ void layer_attach_recognizer(Layer *layer, Recognizer *recognizer) {
   if (!layer || !recognizer) {
     return;
   }
-  RecognizerManager *manager = window_get_recognizer_manager(layer_get_window(layer));
-  if (manager) {
-    recognizer_manager_register_recognizer(manager, recognizer);
+  // Single-owner contract: an already-owned recognizer keeps its original owner. Register
+  // with a manager only on the first real attach -- recognizer_add_to_list already no-ops
+  // list membership for a foreign-owned recognizer (single-owner, checked below), so
+  // registering unconditionally would repoint recognizer->manager at this layer's manager
+  // while list membership (the real ownership root) silently stayed with the original
+  // layer, permanently diverging the two.
+  const bool was_owned = recognizer_is_owned(recognizer);
+  if (!was_owned) {
+    RecognizerManager *manager = window_get_recognizer_manager(layer_get_window(layer));
+    if (manager) {
+      recognizer_manager_register_recognizer(manager, recognizer);
+    }
   }
   // Always list the recognizer: the layer list is the ownership root; layer_deinit reclaims
   // it, so a manager-less attach stays inert but never leaks.
   // Count ownership transitions, not calls: recognizer_add_to_list early-returns when the
   // recognizer is already owned, and a double-attach must not drift the counter
-  const bool was_owned = recognizer_is_owned(recognizer);
   recognizer_add_to_list(recognizer, &layer->recognizer_list);
   if (!was_owned && recognizer_is_owned(recognizer)) {
     app_state_recognizer_attach_count_inc();

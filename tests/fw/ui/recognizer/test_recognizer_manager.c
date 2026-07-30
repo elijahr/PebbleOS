@@ -1726,3 +1726,97 @@ void test_recognizer_manager__focus_rows(void) {
   layer_detach_recognizer(&layer_a, recognizers[0]);
   prv_destroy_recognizers(recognizers, k_rec_count);
 }
+
+// Task 8A (impl plan section 13): single-owner contract for layer_attach_recognizer.
+//
+// Existing coverage (test_recognizer_manager__double_attach_does_not_double_count) already
+// pins "attach an already-owned recognizer to a second layer is a silent no-op" as tested,
+// intended behavior at the recognizer_add_to_list level (list membership never moves). This
+// case extends that contract to the registration side: a second attach, resolved through a
+// DIFFERENT RecognizerManager than the recognizer's true owner, must not re-parent
+// recognizer->manager either. Before the fix, layer_attach_recognizer called
+// recognizer_manager_register_recognizer unconditionally (before checking ownership), so a
+// cross-layer/cross-manager attach would repoint recognizer->manager at the new manager while
+// list membership (the real ownership root) silently stayed with the original layer --
+// registration and list membership permanently diverge. Reusing s_manager (the app-task
+// manager fixture) with two distinct RecognizerManager instances reproduces that divergence
+// deterministically, standing in for the "different window/task" scenario the plan describes
+// (unreachable in production today since window_get_recognizer_manager is per-task, not
+// per-window, but a real code-level defect regardless).
+void test_recognizer_manager__attach_while_owned_elsewhere_is_noop(void) {
+  NEW_RECOGNIZER(r) = test_recognizer_create(&s_test_impl_data, NULL);
+
+  Window window = {};
+  layer_init(&window.layer, &ROOT_FRAME);
+
+  RecognizerManager manager_a, manager_b;
+  recognizer_manager_init(&manager_a);
+  recognizer_manager_init(&manager_b);
+  manager_a.window = &window;
+  manager_b.window = &window;
+
+  Layer layer_a, layer_b;
+  layer_init(&layer_a, &LAYER_A_FRAME);
+  layer_init(&layer_b, &LAYER_B_FRAME);
+  layer_add_child(&window.layer, &layer_a);
+  layer_add_child(&window.layer, &layer_b);
+
+  s_manager = &manager_a;
+  layer_attach_recognizer(&layer_a, r);
+  cl_assert(recognizer_is_owned(r));
+  cl_assert_equal_p(recognizer_get_manager(r), &manager_a);
+  ListNode *layer_a_head_before = layer_a.recognizer_list.node;
+
+  // A second attach to a different layer, resolved through a different manager, must be a
+  // safe no-op: list ownership stays with layer A and the recognizer's registered manager
+  // must not migrate to manager B.
+  s_manager = &manager_b;
+  layer_attach_recognizer(&layer_b, r);
+
+  cl_assert(recognizer_is_owned(r));
+  cl_assert_equal_p(recognizer_get_manager(r), &manager_a);
+  cl_assert_equal_p(layer_a.recognizer_list.node, layer_a_head_before);
+  cl_assert_equal_p(layer_b.recognizer_list.node, NULL);
+
+  s_manager = &manager_a;
+  layer_detach_recognizer(&layer_a, r);
+}
+
+// Task 8A (impl plan section 13): detaching from a non-owning layer must be a safe no-op
+// that does not touch the true owner's list. Before the fix, recognizer_remove_from_list
+// acted on whichever list->node was passed in regardless of actual membership, corrupting
+// the true owner's head pointer when the wrong layer's detach was called.
+void test_recognizer_manager__detach_from_non_owner_is_safe_noop(void) {
+  const int k_rec_count = 2;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  Window window = {};
+  layer_init(&window.layer, &ROOT_FRAME);
+
+  Layer layer_a, layer_b;
+  layer_init(&layer_a, &LAYER_A_FRAME);
+  layer_init(&layer_b, &LAYER_B_FRAME);
+  layer_add_child(&window.layer, &layer_a);
+  layer_add_child(&window.layer, &layer_b);
+
+  // Two recognizers owned by layer A; recognizers[0] is the list head.
+  layer_attach_recognizer(&layer_a, recognizers[0]);
+  layer_attach_recognizer(&layer_a, recognizers[1]);
+  cl_assert(recognizer_is_owned(recognizers[0]));
+  cl_assert(recognizer_is_owned(recognizers[1]));
+
+  // Layer B never owned recognizers[0]; detaching it from B must be a no-op.
+  layer_detach_recognizer(&layer_b, recognizers[0]);
+
+  // recognizers[0] must still be owned and layer A's list must still contain both
+  // recognizers, in order, with an intact head.
+  cl_assert(recognizer_is_owned(recognizers[0]));
+  cl_assert(recognizer_is_owned(recognizers[1]));
+  cl_assert_equal_p(layer_a.recognizer_list.node, &recognizers[0]->node);
+  cl_assert_equal_p(list_get_next(&recognizers[0]->node), &recognizers[1]->node);
+  cl_assert_equal_p(layer_b.recognizer_list.node, NULL);
+
+  layer_detach_recognizer(&layer_a, recognizers[0]);
+  layer_detach_recognizer(&layer_a, recognizers[1]);
+  prv_destroy_recognizers(recognizers, k_rec_count);
+}
