@@ -81,10 +81,12 @@ static void prv_setup_shadow_layer(ScrollLayer *scroll_layer) {
 
 #if CONFIG_TOUCH_WIDGET_DRAG
 // Set for the exact duration of the drag-originated scroll_layer_set_content_offset() call below
-// (see scroll_layer_is_dragging()). Not a ScrollLayer struct field: the struct size is budgeted
-// for 2.x/3.x app SDK ABI compatibility (src/fw/applib/applib_malloc.json). A single module-level
-// pointer is correct here because touch delivery is single-threaded and serialized: at most one
-// drag is ever in flight at a time.
+// (see scroll_layer_is_dragging()). Not a ScrollLayer struct field: a new field trips the firmware
+// build's exact-equality padding assert (src/fw/applib/applib_malloc.json; a bookkeeping fix via
+// size_3x_padding, not an ABI wall) -- skipped since this is transient, single-drag-in-flight state
+// that shouldn't grow the app-facing allocation budget. A single module-level pointer is correct
+// here because touch delivery is single-threaded and serialized: at most one drag is ever in
+// flight at a time.
 static ScrollLayer *s_dragging_scroll_layer;
 
 bool scroll_layer_is_dragging(const ScrollLayer *scroll_layer) {
