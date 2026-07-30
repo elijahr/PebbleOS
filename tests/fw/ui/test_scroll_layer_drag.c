@@ -218,8 +218,8 @@ void test_scroll_layer_drag__consumed_on_real_change(void) {
 // (recognizer_manager.c ~:154-159) -- i.e. exactly Started/Updated, which is
 // what this test drives the recognizer into. Calling recognizer_cancel()
 // directly exercises that identical terminal call without duplicating the
-// manager/window/layer-tree fixture that FIX 3 below builds for its own
-// purpose.
+// manager/window/layer-tree fixture that manager_dispatch_moves_offset below
+// builds for its own purpose.
 void test_scroll_layer_drag__updated_drag_cancel_is_noop(void) {
   ScrollLayer scroll_layer;
   scroll_layer_init(&scroll_layer, &GRect(0, 0, 168, 168));
@@ -261,11 +261,11 @@ void test_scroll_layer_drag__updated_drag_cancel_is_noop(void) {
 // hit-testing resolving a touch inside the ScrollLayer's frame to a
 // descendant layer whose parent walk reaches the ScrollLayer's own
 // recognizer list (recognizer_manager.c prv_process_all_recognizers); (b)
-// layer_attach_recognizer having actually registered the recognizer with a
-// manager reachable from that walk; (c) the manager->triggered / fail /
-// reset bookkeeping recognizer_manager.c performs around dispatch.
+// layer_attach_recognizer having actually put the recognizer on that list, so
+// the walk in (a) finds it; (c) the manager->triggered / fail / reset
+// bookkeeping recognizer_manager.c performs around dispatch.
 void test_scroll_layer_drag__manager_dispatch_moves_offset(void) {
-  Window window;
+  Window window = {};
   layer_init(&window.layer, &GRect(0, 0, 168, 168));
   window.layer.window = &window;
 
@@ -274,7 +274,7 @@ void test_scroll_layer_drag__manager_dispatch_moves_offset(void) {
   scroll_layer_set_content_size(&scroll_layer, GSize(168, 400));
   layer_add_child(&window.layer, &scroll_layer.layer);
 
-  s_manager.window = &window;
+  recognizer_manager_set_window(&s_manager, &window);
 
   // Touchdown, then two updates dy=-20 each: same math as
   // drag_moves_offset_with_clamp, but every event now goes through
