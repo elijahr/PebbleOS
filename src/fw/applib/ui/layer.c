@@ -634,10 +634,18 @@ void layer_detach_recognizer(Layer *layer, Recognizer *recognizer) {
   // Count ownership transitions, not calls: recognizer_remove_from_list early-returns when
   // the recognizer is not owned, and detaching a never-attached recognizer must not decrement
   const bool was_owned = recognizer_is_owned(recognizer);
-  recognizer_remove_from_list(recognizer, &layer->recognizer_list);
-  RecognizerManager *manager = window_get_recognizer_manager(layer_get_window(layer));
-  if (manager) {
-    recognizer_manager_deregister_recognizer(manager, recognizer);
+  // A detach call on a layer that doesn't actually own this recognizer must be a no-op:
+  // window_get_recognizer_manager is per-task, not per-window, so a wrong-layer detach can
+  // resolve to the SAME manager as the true owner. Without this guard,
+  // recognizer_manager_deregister_recognizer's own manager-match check would pass and it would
+  // reset/orphan a recognizer still listed and dispatched on its real owning layer.
+  const bool is_member = recognizer_is_in_list(recognizer, &layer->recognizer_list);
+  if (is_member) {
+    recognizer_remove_from_list(recognizer, &layer->recognizer_list);
+    RecognizerManager *manager = window_get_recognizer_manager(layer_get_window(layer));
+    if (manager) {
+      recognizer_manager_deregister_recognizer(manager, recognizer);
+    }
   }
   if (was_owned && !recognizer_is_owned(recognizer)) {
     app_state_recognizer_attach_count_dec();

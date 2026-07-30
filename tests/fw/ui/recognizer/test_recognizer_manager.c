@@ -1820,3 +1820,49 @@ void test_recognizer_manager__detach_from_non_owner_is_safe_noop(void) {
   layer_detach_recognizer(&layer_a, recognizers[1]);
   prv_destroy_recognizers(recognizers, k_rec_count);
 }
+
+// Code review follow-up to the fix above: window_get_recognizer_manager is per-task, not
+// per-window, so the realistic case has layer A and layer B resolving to the SAME manager.
+// In that case recognizer_manager_deregister_recognizer's own manager-match check passes
+// (they DO match), so before this fix the wrong-layer detach would still reset and orphan
+// (manager = NULL) a recognizer that stays listed and dispatched on its true owning layer A.
+// Setting s_manager once, shared by both layers, reproduces that realistic scenario.
+void test_recognizer_manager__detach_from_non_owner_same_manager_is_safe_noop(void) {
+  const int k_rec_count = 1;
+  Recognizer **recognizers = prv_create_recognizers(k_rec_count);
+
+  Window window = {};
+  layer_init(&window.layer, &ROOT_FRAME);
+
+  RecognizerManager manager;
+  recognizer_manager_init(&manager);
+  manager.window = &window;
+
+  Layer layer_a, layer_b;
+  layer_init(&layer_a, &LAYER_A_FRAME);
+  layer_init(&layer_b, &LAYER_B_FRAME);
+  layer_add_child(&window.layer, &layer_a);
+  layer_add_child(&window.layer, &layer_b);
+
+  // Both layers resolve to the same manager (the realistic per-task case).
+  s_manager = &manager;
+
+  layer_attach_recognizer(&layer_a, recognizers[0]);
+  cl_assert(recognizer_is_owned(recognizers[0]));
+  cl_assert_equal_p(recognizer_get_manager(recognizers[0]), &manager);
+
+  // Layer B never owned recognizers[0]; detaching it from B must be a safe no-op, even
+  // though layer B's manager lookup resolves to the SAME manager instance that actually
+  // owns the recognizer.
+  layer_detach_recognizer(&layer_b, recognizers[0]);
+
+  // recognizers[0] must still be owned, still listed on layer A, and still registered with
+  // the manager -- not reset/orphaned by the wrong-layer detach.
+  cl_assert(recognizer_is_owned(recognizers[0]));
+  cl_assert_equal_p(recognizer_get_manager(recognizers[0]), &manager);
+  cl_assert_equal_p(layer_a.recognizer_list.node, &recognizers[0]->node);
+  cl_assert_equal_p(layer_b.recognizer_list.node, NULL);
+
+  layer_detach_recognizer(&layer_a, recognizers[0]);
+  prv_destroy_recognizers(recognizers, k_rec_count);
+}

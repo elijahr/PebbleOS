@@ -87,6 +87,12 @@ bool recognizer_is_owned(Recognizer *recognizer) {
   return false;
 }
 
+// The list argument is ignored (see comment above); membership in the global array is the
+// only list this stub knows about.
+bool recognizer_is_in_list(Recognizer *recognizer, RecognizerList *list) {
+  return recognizer_is_owned(recognizer);
+}
+
 RecognizerManager *window_get_recognizer_manager(Window *window) { return NULL; }
 
 bool recognizer_list_iterate(RecognizerList *list, RecognizerListIteratorCb iter_cb,
