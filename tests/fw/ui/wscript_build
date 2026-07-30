@@ -192,7 +192,7 @@ clar(ctx,
                        " src/fw/applib/ui/scroll_layer.c" \
                        " src/fw/applib/ui/menu_layer.c" \
                        " src/fw/applib/ui/shadows.c" \
-                       " src/fw/applib/ui/animation_interpolate.c "
+                       " src/fw/applib/ui/animation_interpolate.c " \
                        " src/fw/applib/ui/animation_timing.c" \
                        " src/fw/applib/graphics/gcolor_definitions.c" \
                        " src/fw/applib/graphics/gtypes.c" \

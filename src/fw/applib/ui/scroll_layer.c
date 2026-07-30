@@ -80,6 +80,17 @@ static void prv_setup_shadow_layer(ScrollLayer *scroll_layer) {
 }
 
 #if CONFIG_TOUCH_WIDGET_DRAG
+// Set for the exact duration of the drag-originated scroll_layer_set_content_offset() call below
+// (see scroll_layer_is_dragging()). Not a ScrollLayer struct field: the struct size is budgeted
+// for 2.x/3.x app SDK ABI compatibility (src/fw/applib/applib_malloc.json). A single module-level
+// pointer is correct here because touch delivery is single-threaded and serialized: at most one
+// drag is ever in flight at a time.
+static ScrollLayer *s_dragging_scroll_layer;
+
+bool scroll_layer_is_dragging(const ScrollLayer *scroll_layer) {
+  return scroll_layer && (scroll_layer == s_dragging_scroll_layer);
+}
+
 static void prv_drag_event_cb(const Recognizer *recognizer, RecognizerEvent event) {
   ScrollLayer *scroll_layer = recognizer_get_user_data(recognizer);
   switch (event) {
@@ -87,8 +98,14 @@ static void prv_drag_event_cb(const Recognizer *recognizer, RecognizerEvent even
     case RecognizerEvent_Updated: {
       const int16_t dy = drag_recognizer_get_delta_y(recognizer);
       const GPoint before = scroll_layer_get_content_offset(scroll_layer);
+      // Mark this specific, synchronous offset update as drag-originated so
+      // .content_offset_changed_handler (e.g. MenuLayer's selection reconciliation) can tell it
+      // apart from any other caller. Scoped tightly around the call: cleared before returning,
+      // never left set across event boundaries.
+      s_dragging_scroll_layer = scroll_layer;
       scroll_layer_set_content_offset(scroll_layer, GPoint(before.x, before.y + dy),
                                       false /* unanimated; unschedules any stale animation */);
+      s_dragging_scroll_layer = NULL;
       const GPoint after = scroll_layer_get_content_offset(scroll_layer);
       if (after.y != before.y) {
         touch_click_suppress_mark_consumed();

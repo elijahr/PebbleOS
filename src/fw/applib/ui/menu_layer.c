@@ -60,6 +60,16 @@ static void prv_menu_layer_offset_reconcile_row_callback(MenuIterator *iterator)
   MenuOffsetReconcileIterator *it = (MenuOffsetReconcileIterator *)iterator;
   const int16_t row_top = it->it.cursor.y;
   const int16_t row_bottom = row_top + it->it.cursor.h;
+  // KNOWN LIMITATION (pre-existing in prv_menu_layer_walk_upward_from_iterator, not introduced
+  // here): when walking upward, cursor.y is computed from a cell height queried with
+  // is_selected=false, then cursor.h is re-queried with is_selected=true WITHOUT recomputing y.
+  // row_top/row_bottom above therefore mix two geometries whenever a client's get_cell_height
+  // varies with selection state (center_focused, MENU_CELL_ROUND_FOCUSED_*): the overlap test can
+  // be off by the delta between the two heights near a viewport boundary, in the upward direction
+  // only. Not compensated for here -- fixing the walk function itself is out of scope for this
+  // reconcile feature. In practice this is defused by the center_focused bail-out above (the case
+  // most likely to vary cell height by selection), but an app using
+  // MENU_CELL_ROUND_FOCUSED_* without center_focused would still see it.
   if (row_bottom > it->content_top_y && row_top < it->content_bottom_y) {
     it->it.menu_layer->selection = it->it.cursor;
     it->found = true;
@@ -70,8 +80,32 @@ static void prv_menu_layer_offset_reconcile_row_callback(MenuIterator *iterator)
 
 static void prv_menu_scroll_offset_changed_handler(ScrollLayer *scroll_layer,
                                                    MenuLayer *menu_layer) {
-  (void)scroll_layer;
 #if CONFIG_TOUCH_WIDGET_DRAG
+  if (!scroll_layer_is_dragging(scroll_layer)) {
+    // Fires for every content offset change, not just drags: animated and unanimated
+    // programmatic scrolls (menu_layer_set_selected_index(..., animated), reload_data(), etc)
+    // all route through here too. Selection reconciliation only makes sense for a real finger
+    // drag -- scroll_layer_is_dragging() is true for the exact duration of ScrollLayer's own
+    // drag-originated offset update (see prv_drag_event_cb in scroll_layer.c).
+    return;
+  }
+
+  if (menu_layer->center_focused && animation_is_scheduled(menu_layer->animation.animation)) {
+    // A center-focus selection animation is mid-flight (see prv_schedule_center_focus_animation):
+    // it stages menu_layer->selection to the *previous* index while animating toward
+    // animation.new_selection, and repositions the content offset itself on its own update tick
+    // (prv_center_focus_animation_update_impl), outside this handler, so in_offset_reconcile can't
+    // guard it. Reconciling here would clobber that staged state and get silently undone on the
+    // animation's next frame. Bail out for the duration of the animation; the highlight and
+    // offset settle correctly once it completes, and dragging afterward reconciles normally.
+    return;
+  }
+
+  // Save/restore rather than set-true/clear-false: a selection_changed callback invoked below
+  // (prv_announce_selection_changed) may legally re-enter this handler (e.g. by calling
+  // scroll_layer_set_content_offset() directly on the ScrollLayer). An unconditional clear at this
+  // frame's exit would stomp an outer, still-in-progress call's guard.
+  const bool was_in_offset_reconcile = menu_layer->in_offset_reconcile;
   menu_layer->in_offset_reconcile = true;
 
   const GSize frame_size = menu_layer->scroll_layer.layer.frame.size;
@@ -112,20 +146,24 @@ static void prv_menu_scroll_offset_changed_handler(ScrollLayer *scroll_layer,
 
     if (recon_it.found && menu_index_compare(&menu_layer->selection.index, &prev_index) != 0) {
       // Snap the highlight to the reconciled row so it matches the row a subsequent tap will
-      // activate. Unanimated and without touching any ongoing animation (change_ongoing_animation
-      // = false): mid-drag, the frame must just track the new selection, never animate -- same
-      // idiom prv_center_focus_animation_update_impl uses to reposition without side effects.
+      // activate. Unanimated (mid-drag, the frame must just track the new selection, never
+      // animate) but WITH change_ongoing_animation = true: a synthesized button click
+      // (CONFIG_TOUCH_NAV_BUTTONS) can leave a selection (inverter) animation scheduled toward
+      // the pre-drag target; left alone, its next update would overwrite the reconciled
+      // highlight. change_ongoing_animation = true takes prv_menu_layer_update_selection_highlight
+      // down the branch that cancels any such animation before snapping the frame directly.
       // Content offset is deliberately left alone here: the offset itself is what the drag is
       // actively driving, and prv_menu_layer_update_selection_scroll_position() (which would
       // re-derive it from the selection) is already blocked by the in_offset_reconcile guard.
       prv_menu_layer_update_selection_highlight(menu_layer, above_viewport, false /* animated */,
-                                                false /* change_ongoing_animation */);
+                                                true /* change_ongoing_animation */);
       prv_announce_selection_changed(menu_layer, prev_index);
     }
   }
 
-  menu_layer->in_offset_reconcile = false;
+  menu_layer->in_offset_reconcile = was_in_offset_reconcile;
 #else
+  (void)scroll_layer;
   // TODO: we might need to propagate this event down to MenuLayerCallbacks
 #endif
 }

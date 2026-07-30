@@ -329,6 +329,19 @@ bool scroll_layer_get_clips_content_offset(ScrollLayer *scroll_layer);
 //! True, if the passed layer is a scroll_layer; false otherwise.
 bool scroll_layer_is_instance(const Layer *layer);
 
+#if CONFIG_TOUCH_WIDGET_DRAG
+//! @internal
+//! True for the exact duration of prv_drag_event_cb's synchronous content-offset update on this
+//! ScrollLayer, so a .content_offset_changed_handler (e.g. MenuLayer's selection reconciliation)
+//! can tell a real finger drag apart from any other caller (an animated or unanimated
+//! programmatic scroll, menu_layer_reload_data(), etc). Deliberately NOT a struct field: the
+//! ScrollLayer/MenuLayer struct sizes are budgeted for 2.x/3.x app SDK ABI compatibility (see
+//! src/fw/applib/applib_malloc.json), which a new field would break. Backed by a single
+//! module-level pointer instead -- correct because touch delivery is single-threaded and
+//! serialized, so at most one drag is ever in flight at a time.
+bool scroll_layer_is_dragging(const ScrollLayer *scroll_layer);
+#endif
+
 //!     @} // end addtogroup ScrollLayer
 //!   @} // end addtogroup Layer
 //! @} // end addtogroup UI

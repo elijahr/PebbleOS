@@ -32,10 +32,18 @@ config TOUCH_WIDGET_DRAG
       TOUCH_NAV_BUTTONS: a board can drag-scroll widgets with or without
       synthetic button emulation.
       MenuLayer reconciles its selection against a drag-moved content
-      offset: if the selected row scrolls out of view, selection moves to
-      the nearest row still visible, and the highlight is repositioned to
-      match, so a tap after dragging a menu activates the row the user
-      actually sees selected.
+      offset: if the selected row scrolls out of view during an actual
+      finger drag, selection moves to the nearest row still visible, the
+      highlight is repositioned to match, and any stale selection
+      animation left over from a synthesized button click is cancelled --
+      so a tap after dragging a menu activates the row the user actually
+      sees selected. Reconciliation is scoped to real drags only: it does
+      not run for animated or unanimated programmatic scrolls (e.g.
+      menu_layer_set_selected_index()), which are left alone.
+      One case is intentionally not reconciled: while a center-focused
+      MenuLayer's own selection-change animation is in flight, dragging
+      moves the content offset but the selection is left as-is until that
+      animation finishes; reconciliation resumes normally afterward.
 
 module = SERVICE_TOUCH
 module-str = Touch
