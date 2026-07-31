@@ -16,6 +16,11 @@
 
 #include "animation_timing.h"
 
+#if CONFIG_TOUCH_WIDGET_DRAG
+#include "applib/ui/recognizer/drag.h"
+#include "services/touch/touch_click_suppress.h"
+#endif
+
 #include <string.h>
 
 T_STATIC bool prv_scroll_layer_is_paging_enabled(ScrollLayer *scroll_layer) {
@@ -74,6 +79,30 @@ static void prv_setup_shadow_layer(ScrollLayer *scroll_layer) {
   layer_add_child(&scroll_layer->layer, &scroll_layer->shadow_sublayer);
 }
 
+#if CONFIG_TOUCH_WIDGET_DRAG
+static void prv_drag_event_cb(const Recognizer *recognizer, RecognizerEvent event) {
+  ScrollLayer *scroll_layer = recognizer_get_user_data(recognizer);
+  switch (event) {
+    case RecognizerEvent_Started:
+    case RecognizerEvent_Updated: {
+      const int16_t dy = drag_recognizer_get_delta_y(recognizer);
+      const GPoint before = scroll_layer_get_content_offset(scroll_layer);
+      scroll_layer_set_content_offset(scroll_layer, GPoint(before.x, before.y + dy),
+                                      false /* unanimated; unschedules any stale animation */);
+      const GPoint after = scroll_layer_get_content_offset(scroll_layer);
+      if (after.y != before.y) {
+        touch_click_suppress_mark_consumed();
+      }
+      break;
+    }
+    case RecognizerEvent_Completed:
+    case RecognizerEvent_Cancelled:
+      // No snap-back in stage 1.
+      break;
+  }
+}
+#endif
+
 static void scroll_layer_property_changed_proc(Layer *layer) {
   ScrollLayer *scroll_layer = (ScrollLayer*)layer;
   const GRect internal_rect = (GRect) { GPointZero, scroll_layer->layer.frame.size };
@@ -98,6 +127,15 @@ void scroll_layer_init(ScrollLayer *scroll_layer, const GRect *frame) {
   layer_add_child(&scroll_layer->layer, &scroll_layer->content_sublayer);
 
   prv_setup_shadow_layer(scroll_layer);
+
+#if CONFIG_TOUCH_WIDGET_DRAG
+  // Owned by scroll_layer->layer.recognizer_list; reclaimed by layer_deinit
+  // (scroll_layer_deinit -> layer_deinit). NULL from heap exhaustion flows
+  // into layer_attach_recognizer's own NULL-recognizer no-op: the widget
+  // silently lacks drag, fail-open.
+  Recognizer *drag_recognizer = drag_recognizer_create(prv_drag_event_cb, scroll_layer);
+  layer_attach_recognizer(&scroll_layer->layer, drag_recognizer);
+#endif
 }
 
 ScrollLayer* scroll_layer_create(GRect frame) {

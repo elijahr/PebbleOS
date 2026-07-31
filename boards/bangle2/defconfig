@@ -62,6 +62,9 @@ CONFIG_HRM_VC31=y
 # the four-button UI: swipe up/down -> UP/DOWN, tap -> SELECT. The single-button
 # short=SELECT / long=BACK remap is a board-config flag (board_bangle2.h).
 CONFIG_TOUCH_NAV_BUTTONS=y
+# Drag-to-scroll ScrollLayer/MenuLayer directly from touch, independent of the
+# synthetic-button emulation above.
+CONFIG_TOUCH_WIDGET_DRAG=y
 
 CONFIG_PWM=y
 
