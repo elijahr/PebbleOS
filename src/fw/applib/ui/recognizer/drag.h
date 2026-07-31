@@ -20,10 +20,11 @@
 //! resolve the shared 3:1 boundary consistently once they see the same
 //! coordinate frame. NOTE: the driver evaluates its ratio on de-sheared
 //! PHYSICAL components, while this recognizer sees delivered coordinates
-//! -- today raw chip coordinates -- so the alignment holds only once the
-//! delivery path is de-sheared. Even in a shared frame the driver keeps
-//! its own dead zone (displacement between the tap ceiling and
-//! CST816_SWIPE_MIN_DISP, or fewer than CST816_SWIPE_MIN_FRAMES frames,
+//! -- framebuffer coordinates on bangle2 since the driver-side de-shear
+//! landed -- so the two gates now share a coordinate frame there. Even
+//! in a shared frame the driver keeps its own dead zone (displacement
+//! between the tap ceiling and CST816_SWIPE_MIN_DISP, or fewer than
+//! CST816_SWIPE_MIN_FRAMES frames,
 //! dispatches nothing), so a stroke that fails this drag may still not
 //! swipe. Silicon-tunable: validated together with the driver's ratio
 //! during on-silicon bring-up validation.

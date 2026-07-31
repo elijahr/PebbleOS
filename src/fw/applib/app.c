@@ -10,6 +10,7 @@
 #include "pbl/mcu/fpu.h"
 #include "process_management/app_manager.h"
 #include "process_state/app_state/app_state.h"
+#include "services/touch/touch_click_suppress.h"
 #include "syscall/syscall.h"
 #include "system/logging.h"
 #include "system/profiler.h"
@@ -101,6 +102,14 @@ static void prv_app_will_focus_handler(PebbleEvent *e, void *context) {
 }
 
 static void prv_app_button_down_handler(PebbleEvent *e, void *context) {
+#if CONFIG_TOUCH_NAV_BUTTONS
+  if (e->button.is_synthetic_click && touch_click_suppress_should_drop_click()) {
+    // Consumed stroke: drop the whole click, BACK included — this must sit
+    // above the BACK early exit or a consumed drag that classifies as a
+    // swipe-right pops the window with no way to suppress it.
+    return;
+  }
+#endif
   WindowStack *app_window_stack = app_state_get_window_stack();
   if (window_stack_is_animating(app_window_stack)) {
     return;

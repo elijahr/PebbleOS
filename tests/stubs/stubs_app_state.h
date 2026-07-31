@@ -10,6 +10,9 @@
 #include "applib/ui/window_stack_private.h"
 #include "applib/unobstructed_area_service_private.h"
 #include "process_state/app_state/app_state.h"
+#if CONFIG_TOUCH_NAV_BUTTONS
+#include "services/touch/touch_click_suppress.h"
+#endif
 #include "pbl/services/app_glances/app_glance_service.h"
 #include "pbl/util/attributes.h"
 #include "pbl/util/heap.h"
@@ -175,4 +178,12 @@ void WEAK app_state_recognizer_attach_count_dec(void) {
 uint16_t WEAK app_state_recognizer_attach_count(void) {
   return s_stub_app_state_recognizer_attach_count;
 }
+
+#if CONFIG_TOUCH_NAV_BUTTONS
+TouchClickSuppressState s_stub_app_state_touch_click_suppress_state;
+
+TouchClickSuppressState *WEAK app_state_get_touch_click_suppress_state(void) {
+  return &s_stub_app_state_touch_click_suppress_state;
+}
+#endif
 #endif

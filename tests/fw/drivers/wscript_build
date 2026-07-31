@@ -30,4 +30,8 @@ clar(ctx,
      test_sources_ant_glob='test_bangle2_flash_ids.c',
      override_includes=['dummy_board'])
 
+clar(ctx,
+     test_sources_ant_glob='test_cst816_transform.c',
+     override_includes=['dummy_board'])
+
 # vim:filetype=python

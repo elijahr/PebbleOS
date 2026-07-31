@@ -61,6 +61,7 @@
 #include "pbl/services/system_task.h"
 #ifdef CONFIG_TOUCH
 #include "pbl/services/touch/touch.h"
+#include "services/touch/touch_click_suppress.h"
 #endif
 #include "pbl/services/vibe_pattern.h"
 #include "pbl/services/alarms/alarm.h"
@@ -275,6 +276,25 @@ static void launcher_handle_button_event(PebbleEvent* e) {
 
   const bool is_modal_focused = (modal_manager_get_enabled() &&
                                  !(modal_manager_get_properties() & ModalProperty_Unfocused));
+
+#if CONFIG_TOUCH_NAV_BUTTONS
+  if ((e->type == PEBBLE_BUTTON_DOWN_EVENT) && e->button.is_synthetic_click &&
+      touch_click_suppress_should_drop_click()) {
+    // A consumed stroke's synthetic click is dropped here, at KernelMain
+    // dequeue, before the modal/watchface fan-out has touched any click
+    // recognizer or button-state bitmask. This is the ONLY KernelMain check;
+    // the app task filters independently at its own dequeue site
+    // (prv_app_button_down_handler in applib/app.c) with its own state slot.
+    // No caller marks the KernelMain flag yet, so this check is a no-op
+    // until one exists. Preserve the fan-out's app-task masking so a focused
+    // modal or running watchface still shields the app from the raw event.
+    if (is_modal_focused || watchface_running) {
+      e->task_mask |= 1 << PebbleTask_App;
+    }
+    return;
+  }
+#endif
+
   if (is_modal_focused) {
     // mask the app task if a modal is on top
     e->task_mask |= 1 << PebbleTask_App;

@@ -20,6 +20,7 @@
 #include "process_management/process_manager.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/persist.h"
+#include "services/touch/touch_click_suppress.h"
 #include "syscall/syscall_internal.h"
 #include "system/logging.h"
 #include "system/passert.h"
@@ -108,6 +109,9 @@ typedef struct {
   RecognizerList recognizer_list;
   RecognizerManager recognizer_manager;
   uint16_t recognizer_attach_count;
+#if CONFIG_TOUCH_NAV_BUTTONS
+  TouchClickSuppressState touch_click_suppress_state;
+#endif
 #endif
 
   uint8_t *js_runtime_context_buffer;
@@ -218,6 +222,9 @@ NOINLINE void app_state_init(void) {
 #ifdef CONFIG_TOUCH
   recognizer_list_init(&s_app_state_ptr->recognizer_list);
   recognizer_manager_init(&s_app_state_ptr->recognizer_manager);
+#if CONFIG_TOUCH_NAV_BUTTONS
+  s_app_state_ptr->touch_click_suppress_state = (TouchClickSuppressState){};
+#endif
 #endif
 
   health_service_state_init(app_state_get_health_service_state());
@@ -443,6 +450,12 @@ void app_state_recognizer_attach_count_dec(void) {
 uint16_t app_state_recognizer_attach_count(void) {
   return s_app_state_ptr->recognizer_attach_count;
 }
+
+#if CONFIG_TOUCH_NAV_BUTTONS
+TouchClickSuppressState *app_state_get_touch_click_suppress_state(void) {
+  return &s_app_state_ptr->touch_click_suppress_state;
+}
+#endif
 #endif
 
 JsRuntimeContext *app_state_get_js_runtime_context(void) {

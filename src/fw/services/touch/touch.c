@@ -204,6 +204,14 @@ void touch_handle_update(TouchState touch_state, int16_t x, int16_t y) {
 //
 // This runs on the system task (the CST816 driver defers its work there), a
 // non-ISR context, so event_put() is the correct queueing call.
+//
+// Suppression contract: a synthetic click born here may belong to a stroke a
+// widget already consumed (touch_click_suppress.h). Each consuming task must
+// filter at its own dequeue site via touch_click_suppress_should_drop_click().
+// Exactly two such sites exist: KernelMain in launcher_handle_button_event
+// (src/fw/kernel/event_loop.c), before the modal/watchface fan-out, and the
+// app task in prv_app_button_down_handler (src/fw/applib/app.c). Anyone
+// adding a third dispatch path for these events must add the same filter.
 static void prv_synthesize_nav_button(ButtonId button_id) {
 #if CONFIG_TOUCH_NAV_BUTTONS
   PebbleEvent e = {
