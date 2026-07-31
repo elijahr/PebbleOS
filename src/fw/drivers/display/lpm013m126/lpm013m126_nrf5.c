@@ -285,6 +285,13 @@ void display_init(void) {
   prv_extcomin_init();
 
   s_sem = xSemaphoreCreateBinary();
+
+  // Lay down the letterbox border. display_update() only ever emits the panel
+  // lines the framebuffer maps onto, so the border lines are written here and
+  // never again; without this they keep whatever was on the panel at power-on.
+  // Must stay last: display_clear() needs the SPIM, CS and s_sem above, and it
+  // zeroes the retained framebuffer, so it has to precede the first update.
+  display_clear();
 }
 
 void display_clear(void) {
@@ -319,7 +326,7 @@ void display_update(NextRowCallback nrcb, UpdateCompleteCallback uccb) {
   // Absorb the offered rows into the retained mono framebuffer, tracking the
   // dirty span so only the changed panel lines are re-transmitted. The panel
   // keeps whatever we do not rewrite, so the untouched lines (and the constant
-  // letterbox border laid down by display_clear) stay as they are.
+  // letterbox border laid down by display_init) stay as they are.
   int dirty_min = PBL_DISPLAY_HEIGHT;
   int dirty_max = -1;
   while (nrcb(&row)) {
@@ -345,7 +352,7 @@ void display_update(NextRowCallback nrcb, UpdateCompleteCallback uccb) {
     // Map the dirty framebuffer rows to panel line indices. Framebuffer row r
     // lands at panel line r + LETTERBOX_OFFSET_Y, mirrored end to end under 180
     // rotation. The letterbox border lines never change, so they fall outside
-    // this span (already written by display_clear).
+    // this span (written once by display_init).
     int y_lo, y_hi;
     if (s_rotated_180) {
       y_lo = (LCD_PANEL_HEIGHT - 1) - (dirty_max + LETTERBOX_OFFSET_Y);
