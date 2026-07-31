@@ -144,3 +144,11 @@ void recognizer_destroy(Recognizer *recognizer);
 //! @param recognizer \ref Recognizer to check
 //! @return true if recognizer is owned
 bool recognizer_is_owned(Recognizer *recognizer);
+
+//! @internal
+//! Return whether a recognizer is currently linked into the given list. Used to guard
+//! attach/detach against acting on a list the recognizer does not actually belong to.
+//! @param recognizer \ref Recognizer to check
+//! @param list \ref RecognizerList to check membership against
+//! @return true if recognizer is currently a member of list
+bool recognizer_is_in_list(Recognizer *recognizer, RecognizerList *list);

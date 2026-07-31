@@ -11,6 +11,7 @@
 #include "applib/ui/animation_private.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/layer.h"
+#include "applib/ui/app_window_recognizer_glue.h"
 #include "applib/ui/recognizer/recognizer_list.h"
 #include "applib/ui/recognizer/recognizer_manager.h"
 #include "applib/unobstructed_area_service.h"
@@ -109,6 +110,7 @@ typedef struct {
   RecognizerList recognizer_list;
   RecognizerManager recognizer_manager;
   uint16_t recognizer_attach_count;
+  AppWindowRecognizerGlueState recognizer_glue_state;
 #if CONFIG_TOUCH_NAV_BUTTONS
   TouchClickSuppressState touch_click_suppress_state;
 #endif
@@ -222,6 +224,7 @@ NOINLINE void app_state_init(void) {
 #ifdef CONFIG_TOUCH
   recognizer_list_init(&s_app_state_ptr->recognizer_list);
   recognizer_manager_init(&s_app_state_ptr->recognizer_manager);
+  s_app_state_ptr->recognizer_glue_state = (AppWindowRecognizerGlueState){};
 #if CONFIG_TOUCH_NAV_BUTTONS
   s_app_state_ptr->touch_click_suppress_state = (TouchClickSuppressState){};
 #endif
@@ -428,12 +431,15 @@ RecognizerManager *app_state_get_recognizer_manager(void) {
   return &s_app_state_ptr->recognizer_manager;
 }
 
-// The attach counter is per-APP-task: KernelMain modal attaches must not perturb it
+// The attach counter is per-APP-task: KernelMain modal attaches must not perturb it. Task 8
+// (impl plan section 12): the counter's ownership-transition edges also drive the glue's
+// touch_service subscription -- see app_window_recognizer_glue_attach_count_changed.
 void app_state_recognizer_attach_count_inc(void) {
   if (pebble_task_get_current() != PebbleTask_App) {
     return;
   }
   s_app_state_ptr->recognizer_attach_count++;
+  app_window_recognizer_glue_attach_count_changed(s_app_state_ptr->recognizer_attach_count);
 }
 
 void app_state_recognizer_attach_count_dec(void) {
@@ -445,10 +451,15 @@ void app_state_recognizer_attach_count_dec(void) {
     return;
   }
   s_app_state_ptr->recognizer_attach_count--;
+  app_window_recognizer_glue_attach_count_changed(s_app_state_ptr->recognizer_attach_count);
 }
 
 uint16_t app_state_recognizer_attach_count(void) {
   return s_app_state_ptr->recognizer_attach_count;
+}
+
+AppWindowRecognizerGlueState *app_state_get_recognizer_glue_state(void) {
+  return &s_app_state_ptr->recognizer_glue_state;
 }
 
 #if CONFIG_TOUCH_NAV_BUTTONS

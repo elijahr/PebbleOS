@@ -8,6 +8,7 @@
 #include "applib/ui/click_internal.h"
 #include "applib/ui/layer.h"
 #include "applib/ui/window_stack_private.h"
+#include "applib/touch_service_private.h"
 #include "applib/unobstructed_area_service_private.h"
 #include "process_state/app_state/app_state.h"
 #if CONFIG_TOUCH_NAV_BUTTONS
@@ -177,6 +178,12 @@ void WEAK app_state_recognizer_attach_count_dec(void) {
 
 uint16_t WEAK app_state_recognizer_attach_count(void) {
   return s_stub_app_state_recognizer_attach_count;
+}
+
+TouchServiceState s_stub_app_state_touch_service_state;
+
+TouchServiceState *WEAK app_state_get_touch_service_state(void) {
+  return &s_stub_app_state_touch_service_state;
 }
 
 #if CONFIG_TOUCH_NAV_BUTTONS

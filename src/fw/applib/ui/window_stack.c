@@ -5,6 +5,7 @@
 
 #include "animation_private.h"
 #include "app_window_click_glue.h"
+#include "app_window_recognizer_glue.h"
 #include "window_manager.h"
 #include "window_private.h"
 #include "window_stack_animation.h"
@@ -484,6 +485,9 @@ void window_transition_context_appear(WindowTransitioningContext *context) {
     // Either this or app_click_config_setup_with_window should be calling
     // window_setup_click_config_provider instead
     app_click_config_setup_with_window(click_manager, window_to);
+    // Task 8 (impl plan section 12): appear seam (window.c's prv_call_click_provider is not
+    // reached on this transition path).
+    app_window_recognizer_glue_window_focused(window_to);
   }
 }
 

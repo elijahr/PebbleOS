@@ -333,12 +333,21 @@ void recognizer_add_to_list(Recognizer *recognizer, RecognizerList *list) {
 }
 
 void recognizer_remove_from_list(Recognizer *recognizer, RecognizerList *list) {
-  if (!recognizer || !list || !recognizer->is_owned) {
+  // Guard on actual membership, not just ownership: calling this with a list the recognizer
+  // does not belong to must be a no-op, never unlink the node and stomp the wrong head.
+  if (!recognizer || !list || !recognizer->is_owned || !recognizer_is_in_list(recognizer, list)) {
     return;
   }
 
   recognizer->is_owned = false;
   list_remove(&recognizer->node, &list->node, NULL);
+}
+
+bool recognizer_is_in_list(Recognizer *recognizer, RecognizerList *list) {
+  if (!recognizer || !list) {
+    return false;
+  }
+  return list_contains(list->node, &recognizer->node);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
