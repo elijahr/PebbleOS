@@ -11,6 +11,7 @@
 #include "kernel/util/idle.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/soc/nrf/sleep.h"
+#include "pbl/util/math.h"
 
 #include <cmsis_core.h>
 
@@ -24,6 +25,16 @@ static RtcTicks s_analytics_full_sleep_ticks = 0;
 
 static const RtcTicks EARLY_WAKEUP_TICKS = 2;
 static const RtcTicks MIN_FULL_SLEEP_TICKS = 5;
+//! Upper bound on a single tickless sleep. FreeRTOS passes portMAX_DELAY-relative values
+//! when no task is blocked with a timeout, and the RTC compare register is only 24 bits,
+//! so an unclamped value wraps to an arbitrary wait. One second also matches the regular
+//! timer service's 1000 ms repeating callback (see
+//! src/fw/services/regular_timer/service.c), so we wake up once per that interval anyway;
+//! a longer cap would not save additional power and would desynchronize us from it.
+static const RtcTicks MAX_STOP_TICKS = RTC_TICKS_HZ;
+
+_Static_assert(MIN_FULL_SLEEP_TICKS > EARLY_WAKEUP_TICKS,
+               "sleep_ticks would underflow");
 
 extern void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime ) {
   if (!rtc_alarm_is_initialized() || !idle_is_allowed()) {
@@ -46,7 +57,7 @@ extern void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime ) {
 
       s_analytics_sleep_ticks += rtc_get_ticks() - sleep_start_ticks;
     } else {
-      const RtcTicks sleep_ticks = xExpectedIdleTime - EARLY_WAKEUP_TICKS;
+      const RtcTicks sleep_ticks = MIN(xExpectedIdleTime - EARLY_WAKEUP_TICKS, MAX_STOP_TICKS);
       RtcTicks elapsed_ticks;
 
       flash_power_down_for_stop_mode();
@@ -64,7 +75,11 @@ extern void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime ) {
 
       rtc_systick_resume();
       elapsed_ticks = rtc_alarm_get_elapsed_ticks();
-      vTaskStepTick(elapsed_ticks);
+      // vTaskStepTick asserts the tick count does not pass xNextTaskUnblockTime, and that assert
+      // reboots. elapsed_ticks is free-running real time and can exceed the requested sleep (missed
+      // COMPARE, debugger halt), so bound the value handed to the RTOS. The watchdog and analytics
+      // below intentionally still use true elapsed time.
+      vTaskStepTick((TickType_t)MIN(elapsed_ticks, (RtcTicks)xExpectedIdleTime));
 
       flash_power_up_after_stop_mode();
       task_watchdog_step_elapsed_time_ms((elapsed_ticks * 1000) / RTC_TICKS_HZ);

@@ -154,8 +154,10 @@ notifications. See R1 (near-term metadata fix) and R10 (bootloader + PRF).
   Open follow-ups: notifications blocked by the recovery-mode/`recoveryFwVersion=null`
   gate (near-term fix in progress on branch `bangle2-notifications`; durable fix
   = R10); V4 robustness + V5 coexistence; platform-22 `UNKNOWN`/FW-update
-  cosmetics (register BANGLE2(22) upstream in `libpebble3`). Fix R3 before
-  power work. The one-off `0x11` assert seen during a failed re-pair is
+  cosmetics (register BANGLE2(22) upstream in `libpebble3`). R3 (tickless-idle
+  stall) has a fix written, but it is NOT BUILT and NOT BENCH-VERIFIED. Build it
+  before you start power work. The one-off `0x11` assert
+  seen during a failed re-pair is
   ROOT-CAUSED AND FIXED: `bt_driver_advert_advertising_disable` checked
   `ble_gap_adv_active()` without the host lock, then asserted on any non-zero
   from `ble_gap_adv_stop()`, which re-checks under the lock and reports
@@ -167,9 +169,37 @@ notifications. See R1 (near-term metadata fix) and R10 (bootloader + PRF).
 - [ ] **R2 — Display white-border / top-cutout anomaly.** Border constant is
   BLACK yet renders white → suspect 3bpp polarity / bit-reversal in encode,
   or Y-offset off-by-one. Bench debug.
-- [ ] **R3 — Tickless-idle time stall.** Clamp `xExpectedIdleTime` to
-  `RTC_TICKS_HZ * 60` in `vPortSuppressTicksAndSleep`; assert
-  `num_ticks < (1<<24)` in `rtc_alarm_set`. Fix before any power work.
+- [ ] **R3 — Tickless-idle time stall (FIX WRITTEN, UNBUILT; was a REGRESSION).**
+  STATUS: the change below is source-reviewed only. Nobody has compiled it —
+  `arm-none-eabi-gcc` was not installed on the machine where it was written, and
+  CI does not build this branch (see the `branches: [main]` trigger gap). Build
+  it before you trust it. Commit
+  `011bb5a8d` ("soc/nrf52: cleanup sleep code") deleted
+  `MAX_STOP_TICKS = RTC_TICKS_HZ` and the clamp
+  `MIN(xExpectedIdleTime - EARLY_WAKEUP_TICKS, MAX_STOP_TICKS)` in
+  `vPortSuppressTicksAndSleep`. Fix restores both. Do NOT add an assert on
+  `num_ticks` in `rtc_alarm_set`: `PBL_ASSERTN` is NORETURN (reboots via
+  `trigger_fault`), and `num_ticks >= 2^24` is reachable from legitimate
+  FreeRTOS input (empty delayed-task list gives
+  `xExpectedIdleTime = portMAX_DELAY - xTickCount`) — an assert there is a
+  reboot loop, not a fix. A clamp at the 24-bit hardware limit also does not
+  fix the symptom: the wait register masks to `num_ticks mod 2^24`, so a
+  worst-case request already yields ~2^24 ticks (~4.55 h); clamping at 2^24
+  changes that by ~3 ticks. `RTC_TICKS_HZ` (1 s) is the correct, restored
+  clamp, and matches the timer service's 1000 ms repeating callback. Also
+  fixed on the same path: `vTaskStepTick`'s argument is now bounded by
+  `xExpectedIdleTime` (`rtc_alarm_get_elapsed_ticks()` is free-running real
+  time and can exceed the requested sleep; `vTaskStepTick`'s `configASSERT`
+  is the same NORETURN `PBL_ASSERT`). The stall was latent, not live: RTC
+  COMPARE_1 keeps feeding the task watchdog every 500 ms through
+  `rtc_systick_pause()`, and PRIMASK does not block WFI wake, so the CPU
+  wakes every ~500 ms regardless of CC0; the 8 s hardware watchdog is a
+  second ceiling. This is why R3 had to land before power work: the first
+  obvious power optimization is suppressing that 2 Hz feed, which makes the
+  stall live. Known gap left open: `rtc_alarm_set` still has no driver-side
+  upper clamp, so the 24-bit constraint is enforced only by the caller;
+  left out on purpose since it changes a public API and wants its own
+  review.
 - [ ] **R4 — Touch Phase 2: absolute tap calibration.** N-point affine
   tap-grid fit (chip coords → 176x176). Do NOT revert the atomic one-shot
   click model. Drag-to-scroll can ship first.

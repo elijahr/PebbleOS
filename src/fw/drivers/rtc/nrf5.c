@@ -10,6 +10,7 @@
 #include "drivers/task_watchdog.h"
 
 #include "pbl/mcu/interrupts.h"
+#include "pbl/util/math.h"
 
 #include "pbl/services/regular_timer.h"
 
@@ -39,6 +40,9 @@ static RtcIntervalTicks prv_get_last_save_time_ticks(void);
 static void prv_save_rtc_time_state(RtcIntervalTicks current_rtc_ticks);
 
 #define TICKS_IN_AN_INTERVAL (RTC_COUNTER_COUNTER_Msk + 1)
+
+//! Minimum CC delta; see the margin discussion in rtc_alarm_set.
+#define MIN_ALARM_TICKS 4
 
 static RtcIntervalTicks prv_elapsed_ticks(RtcIntervalTicks before, RtcIntervalTicks after) {
   int32_t result = after - before;
@@ -393,19 +397,28 @@ void rtc_alarm_init(void) {
 
 void rtc_alarm_set(RtcTicks num_ticks) {
   PBL_ASSERTN(s_tick_alarm_initialized);
-  
+
   nrf_rtc_event_disable(BOARD_RTC_INST, NRF_RTC_EVENT_COMPARE_0);
   nrf_rtc_event_clear(BOARD_RTC_INST, NRF_RTC_EVENT_COMPARE_0);
-  
+
   s_alarm_set_time = rtc_get_ticks();
-  s_alarm_expiry_time = s_alarm_set_time + num_ticks - 1;
-  
-  /* We're bounded by the regular_timer_add_minutes_callback for the
-   * rtc_alarm_set, so we're not going to wrap around more than once -- one
-   * minute is always less than 4.5 hours.
-   */
+
+  /* nRF52 only guarantees a COMPARE event when the CC value is at least 2 ticks
+   * ahead of COUNTER, and one more tick may elapse between the rtc_get_ticks()
+   * above and the nrf_rtc_cc_set() below (see the delta_t < 3 discussion in
+   * third_party/nimble/mynewt-nimble/porting/nimble/src/hal_timer.c; nimble
+   * falls back to the TICK interrupt there rather than padding).
+   *
+   * s_coarse_ticks is seeded to 1, so the "- 1" below cancels it and the masked
+   * CC value works out to exactly COUNTER + num_ticks. A floor of 4 therefore
+   * leaves 4 ticks of margin, or 3 after a one-tick slip. This can extend the
+   * alarm beyond what the caller requested. */
+  s_alarm_expiry_time = s_alarm_set_time + MAX(num_ticks, MIN_ALARM_TICKS) - 1;
+
+  /* The caller clamps to MAX_STOP_TICKS; the CC register is only 24 bits so
+   * it cannot represent a wait longer than ~4.55 hours regardless. */
   nrf_rtc_cc_set(BOARD_RTC_INST, 0, s_alarm_expiry_time & RTC_COUNTER_COUNTER_Msk);
-  
+
   nrf_rtc_event_enable(BOARD_RTC_INST, NRF_RTC_EVENT_COMPARE_0);
   nrf_rtc_int_enable(BOARD_RTC_INST, NRF_RTC_INT_COMPARE0_MASK);
 }

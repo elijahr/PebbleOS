@@ -91,6 +91,9 @@ RtcTicks rtc_get_ticks(void);
 void rtc_alarm_init(void);
 
 //! Set the alarm to go off num_ticks from now.
+//! @note Platforms may enforce a minimum delay; on nRF5 a very small num_ticks
+//! can fire later than requested (floored at MIN_ALARM_TICKS for hardware
+//! compare-margin reasons).
 void rtc_alarm_set(RtcTicks num_ticks);
 
 //! Clear the timezone registers (as part of factory reset)
