@@ -201,29 +201,35 @@ The watch then does these steps:
   firmware region, erases it, and copies the image. See
   `src/fw/main.c:364` and `src/fw/services/prf_update/service.c:70-81`.
 
-Step 4 is necessary. Do not omit it. A recovery-only installation does not make
-a reset by itself, and it leaves the watch in the firmware-update run level
-until something resets it.
+Step 4 is necessary. Do not omit it. The copy into the safe firmware region
+occurs only at boot, in `check_prf_update`. Until the watch starts again, the
+image stays in the scratch slot and the recovery firmware version stays null.
 
-The cause is a path that has no reboot. The update service sets
+A recovery-only installation also leaves the watch in the firmware-update run
+level, because that path has no reboot. The update service sets
 `RunLevel_FirmwareUpdate` at `src/fw/services/firmware_update/service.c:179`.
 It puts the level back to `RunLevel_Normal` at `:218` only when the update
 FAILS. The comment there says "If we succeeded, we'll reboot shortly." For a
 recovery object there is no reboot: `ObjectRecovery` sets
 `BOOT_BIT_NEW_PRF_AVAILABLE` and falls through
-(`src/fw/services/put_bytes/put_bytes.c:512-516`). Thus a SUCCESSFUL recovery
-installation never puts the run level back.
+(`src/fw/services/put_bytes/put_bytes.c:512-516`).
 
-In that run level, two services stay off. Their masks are `R_Normal` only, in
-the table at `src/fw/services/services_common/service.c`:
+On this board that state has no effect that a user can see. In the table at
+`src/fw/services/services_common/service.c`, only `hrm_manager_enable` has the
+mask `R_Normal` in a form that the build compiles. Bluetooth, the accelerometer,
+the backlight and the vibration motor all include `R_FirmwareUpdate` in their
+masks and stay on.
 
-- `touch_sensor_set_enabled` — the touch screen does not respond.
-- `hrm_manager_enable` — the heart-rate monitor stays off.
+The touch screen is NOT affected. Its entry is inside
+`#if defined(CONFIG_TOUCH) && defined(CONFIG_RECOVERY_FW)`, and
+`CONFIG_RECOVERY_FW` is absent from the normal build (see `build/autoconf.h`).
+Thus the entry is not in the image, the run level does not manage the touch
+screen, and the touch screen continues to work. The heart-rate monitor stops,
+but this port computes no rate, so nothing changes for the user.
 
-Bluetooth is NOT affected: `bt_ctl_set_enabled` has the mask
-`R_FirmwareUpdate | R_Normal`, so the link stays up. A watch that seems dead to
-touch after a recovery installation is in this run level. The reset in step 4
-corrects it. (Behaviour found by pebble-ble-2.)
+(Run-level behaviour found by pebble-ble-2, who also corrected an earlier
+statement that the touch screen stops. Read the guards around a table, not only
+the rows.)
 
 `CONFIG_SERVICE_PRF_UPDATE=y` is in the build that is on the watch. Therefore
 the watch has this path already.
