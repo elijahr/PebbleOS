@@ -287,6 +287,12 @@ def add_clar_test(
     platform,
     use,
 ):
+    # Copy every list this function appends to. These arrive straight from
+    # clar()'s arguments and are reused across its source/platform loops, so
+    # appending in place would grow the caller's list once per test declared.
+    test_libs = list(test_libs or [])
+    override_includes = list(override_includes or [])
+    use = list(use or [])
 
     if bld.options.regex:
         # Match the test name, not str(test_source): Node.__str__ is the
@@ -391,8 +397,6 @@ def add_clar_test(
     idl_includes = [root_build_dir + "src/idl"]
     includes += idl_includes
 
-    if use is None:
-        use = []
     # Add DUMA for memory corruption checking
     # conditionally disable duma based on DUMA_DISABLED being defined
     # DUMA is found in tests/vendor/duma
@@ -520,8 +524,8 @@ def clar(
     sources_ant_glob=None,
     test_sources_ant_glob=None,
     test_sources=None,
-    test_libs=[],
-    override_includes=[],
+    test_libs=None,
+    override_includes=None,
     add_includes=None,
     defines=None,
     test_name=None,
@@ -555,10 +559,9 @@ def clar(
                 )
                 return
 
-    if test_sources is None:
-        test_sources = []
-
-    # Make a copy so if we modify it we don't accidentally modify the callers list
+    # Make copies so if we modify these we don't accidentally modify the
+    # callers lists. test_sources is extended below by the ant glob.
+    test_sources = list(test_sources or [])
     defines = list(defines or [])
     defines.append("UNITTEST")
     defines.append("MEMFAULT=0")
