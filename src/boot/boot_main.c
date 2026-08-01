@@ -141,6 +141,22 @@ static void nor_read(uint32_t addr, uint8_t *dst, uint32_t len) {
   memcpy(dst, &s_nor_rx[4], len);  // skip the 4 header bytes
 }
 
+//! Return SPIM2 and the NOR chip-select pin to their reset state. The firmware
+//! must inherit hardware exactly as it would after a cold reset (see the
+//! reset-equivalent handoff contract in start_firmware): an SPIM2 left enabled
+//! with its PSEL routed, or a GPIO left driven, is state the firmware was never
+//! written to tolerate and would surface as a fault far from this cause. NVMC
+//! is already restored to WEN_Ren by each erase/write; PSEL is only writable
+//! while the peripheral is disabled, so disable first, then disconnect.
+static void nor_deinit(void) {
+  NRF_SPIM2->ENABLE = (SPIM_ENABLE_ENABLE_Disabled << SPIM_ENABLE_ENABLE_Pos);
+  NRF_SPIM2->PSEL.SCK = 0xFFFFFFFFu;   // CONNECT=Disconnected (PSEL reset value)
+  NRF_SPIM2->PSEL.MOSI = 0xFFFFFFFFu;
+  NRF_SPIM2->PSEL.MISO = 0xFFFFFFFFu;
+  NRF_P0->OUTCLR = (1u << NOR_CS_PIN);
+  NRF_P0->PIN_CNF[NOR_CS_PIN] = 0x00000002u;  // GPIO PIN_CNF reset value
+}
+
 // -----------------------------------------------------------------------------
 // Internal flash erase/write (NVMC). Same idiom as the startup REGOUT0 guard.
 
@@ -247,6 +263,15 @@ static bool internal_image_valid(void) {
 
 //! The image at FW_EXEC_BASE starts with its vector table: word 0 is the
 //! initial SP, word 1 is the reset vector. Point VTOR at it, load SP, jump.
+//!
+//! Reset-equivalent handoff contract: the firmware is written to start from a
+//! cold reset, so every machine-state input it does not itself initialize must
+//! match the reset default at the moment of the jump. This function restores
+//! PRIMASK (below); any peripheral the copy path touches is torn down before we
+//! get here (nor_deinit for SPIM2/GPIO, NVMC self-restores to WEN_Ren). The
+//! bootloader deliberately arms no WDT and never leaves MSP/CONTROL/FAULTMASK
+//! off their reset values. Anything added here that enables a peripheral, a
+//! timer, an IRQ, or a clock source must be undone before this point.
 __attribute__((noreturn)) static void start_firmware(void) {
   const uint32_t *vt = (const uint32_t *)FW_EXEC_BASE;
   uint32_t sp = vt[0];
@@ -299,6 +324,9 @@ void boot_main(void) {
       // intact. Record a strike, clear the request, start the resident image.
       boot_bits_update(boot_next_strike(&plan, boot_bits), plan.consume_bit);
     }
+    // image_validate() already drove SPIM2 on every sub-path above, so tear it
+    // down here (not per-branch) to honor the reset-equivalent handoff.
+    nor_deinit();
   }
 
   start_firmware();
