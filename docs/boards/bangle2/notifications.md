@@ -264,20 +264,48 @@ is no use of the symbol in `prf_update`.
   temporary. Make the reset of the watch by hand. The link then comes back, and
   the pair stays correct. A new pair is not necessary and wastes time.
 
-  The cause of this condition is NOT known. Before you make the reset, read
-  these two words over SWD, because the reset destroys the evidence:
+  There are two different events here. Keep them apart. The first has an
+  explanation. The second does not.
 
-  - `reboot_reason` at `0x20000014`
-  - `s_last_reboot_reason_code` at `0x20016553`
+  The disconnection is not a fault. The phone log gives `status=19`, which is
+  the HCI reason `0x13`, "Remote User Terminated Connection". The watch sent
+  that message on purpose. To send it, the host stack must still operate. A
+  watch that stops because of an assert cannot send it. An assert gives a
+  supervision timeout, which is `status=8`. The two values show different
+  conditions, and they almost exclude each other. The order in the log agrees:
+  the message "Has no more bearers and is disconnected" comes before the
+  status. That is the order of a disconnection that the watch controls, not of
+  a link that stopped and was found later. The probable cause is the restart
+  that applies the new image. The record of 2026-07-28 gives 3.06 seconds
+  between the acknowledgement of INSTALL and the disconnection. Thus this part
+  of the sequence is not a defect. It is the installation that completes.
 
-  A value of `0x11` in the second word is an assert, and the watch stopped
-  because of a fault. Any other value shows that the watch made the
-  disconnection on purpose. The record of 2026-07-28 gives a graceful
-  disconnection: the phone log has `status=19`, which is the HCI reason `0x13`,
-  "Remote User Terminated Connection". An assert does not make a graceful
-  disconnection; it gives a supervision timeout, which is `status=8`. Thus the
-  fault path is improbable here, but nobody read the two words at the time.
-  Read them if this happens again. (Method from pebble-ble-2.)
+  The failure to connect again IS an open problem. `HCI_ERR_KEY_MISSING` shows
+  that the phone gave a pair that the watch could not use at that moment. This
+  is a problem of the storage of the pair through a restart. It is not a
+  problem of advertisement. Only the manual reset corrects it. The pair is
+  correct after the reset.
+
+  If this occurs again, get this evidence. A reset destroys it.
+
+  - Read `reboot_reason` at `0x20000014` over SWD.
+  - Read `s_last_reboot_reason_code` at `0x20016553` over SWD.
+  - Record if the database of pairs kept its contents through the restart.
+    This is the item that has the most importance. The two words above show
+    why the watch started again. They do not show why the pair became
+    unusable.
+
+  A value of `0x11` in the second word is an assert. Any other value shows a
+  restart that the watch made on purpose. Nobody read these words on
+  2026-07-28.
+
+  The comparison of `status=19` with `status=8` is from pebble-ble-2. This
+  record was offered to them as possible evidence of a different defect, in
+  the stop of advertisement, which they had found. They refused the relation,
+  and the reason above is theirs. That defect ends in an assert, thus in
+  `status=8`, thus it is not the cause here. Their confidence in the refusal
+  is high. Their confidence in the restart that applies the image is medium,
+  because it is only the most simple explanation and nobody read the words.
 
 ### Results of the procedure on 2026-07-28
 
