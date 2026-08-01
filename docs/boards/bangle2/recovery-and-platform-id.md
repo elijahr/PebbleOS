@@ -65,24 +65,77 @@ Both operands move `UNKNOWN -> BANGLE2` **together**. The equality holds in
 both worlds, so **registering BANGLE2(22) does NOT close the recovery
 sideload channel** for our `hwrev = "bangle2"` images.
 
-Registration is in fact strictly beneficial:
+Registration is a TRADE, not a pure win. It has three consequences, two
+good and one that points at the hardware. (An earlier draft of this doc
+called registration "strictly beneficial" — that was wrong, and is
+corrected here; credit pebble-noti-2 for catching it before it hardened
+into inherited testimony.)
 
-1. It fixes the wrong-watchType symptom: today platform 22 -> UNKNOWN ->
-   the app's `unknownWatchTypePlatform` fallback (EMERY, a COLOUR platform),
-   so it offers colour app variants to a 1-bit mono watch. Registered, it
-   resolves to FLINT (correct).
-2. It ADDS a correct guard: after registration only `hwrev = "bangle2"`
-   images sideload; a mismatched-platform image is now rejected, which is
-   what we want.
+1. GOOD: it fixes the wrong-watchType symptom. Today platform 22 -> UNKNOWN
+   -> the app's `unknownWatchTypePlatform` fallback (EMERY, a COLOUR
+   platform), so it offers colour app variants to a 1-bit mono watch.
+   Registered, it resolves to FLINT (correct).
+2. GOOD: it adds a sideload guard. After registration only `hwrev =
+   "bangle2"` images sideload; a mismatched-platform image is rejected.
+3. **RISK: it REMOVES a firmware-update-check interlock.** This is the one
+   nobody accounted for at first. `FirmwareUpdateCheck.kt:66-70`:
 
-### DECISION (2026-08-01): the BANGLE2(22) hold is RELEASED
+       watch.platform == UNKNOWN -> UpdateCheckFailed("Unknown platform")
+       watch.platform.isCoreDevice() && MEMFAULT_TOKEN != null -> memfault…
+       else -> cohorts.getLatestFirmware(watch)
 
-An earlier hold said "do not register / do not install an app with
-BANGLE2(22) until a correctly-linked PRF or the SWD flashloader write path
-exists," on the premise that registration would close the only recovery
-channel. **That premise is disproven by the source analysis above.** The
-hold is released. The decision to land the registration PR is the
-operator's; this doc only removes the technical blocker and records why.
+   Verified in source: today `platform == UNKNOWN` SHORT-CIRCUITS before any
+   update check runs. The "Unknown platform" line we have been treating as a
+   cosmetic annoyance is in fact acting as a SAFETY INTERLOCK — it is why
+   this watch has never been offered a firmware update. `isCoreDevice()`
+   (:77-85) is a false-list ending in `else -> true`, and BANGLE2 is not in
+   the false-list, so it returns `true`. So after registration the check
+   proceeds to a live remote service (`memfault` or `cohorts`) for a watch
+   running a hand-built PebbleOS image with a hand-installed PRF, on the one
+   piece of hardware in this project that is not recoverable without SWD and
+   whose external NOR cannot yet be restored from a probe.
+
+   NOT verified, stated plainly: whether `MEMFAULT_TOKEN` is set in the
+   store build, and what either service returns for platform 22 (plausibly
+   nothing, since no such device exists upstream). The claim is not "an
+   update will be offered" — it is "the interlock is removed, and the
+   outcome then depends on a remote service nobody here controls or has
+   tested." "It probably returns nothing" is not a safety argument for a
+   brickable single-instance device.
+
+So the honest summary: registration ADDS a sideload safety check while
+REMOVING an update-check interlock. The same UNKNOWN state that causes the
+wrong-watchType bug also provides the interlock; fixing the bug removes the
+interlock. Trade, not pure win.
+
+### DECISION (2026-08-01): hold RELEASED, but registration is GUARDED
+
+Two separate decisions:
+
+- The original hold's PREMISE (registration closes the recovery sideload
+  channel) is disproven by the enum analysis above. That hold is released.
+- BUT registration is gated on a mitigation for consequence 3.
+  **OPERATOR DECISION (via pebble-noti-2, 2026-08-01): enable the phone
+  app's "Disable FW update notifications" Debug setting FIRST, confirm it
+  holds, THEN push the registration.** That setting exists precisely for
+  users who sideload their own firmware. The registration push is gated on
+  the guard, not on further debate; it was blocked only by the phone being
+  physically disconnected at decision time.
+
+The decision to land the registration PR is the operator's; this doc
+records the analysis, the trade, and the agreed sequencing.
+
+### Open question (deferred): should BANGLE2 be a "Core device" for updates?
+
+`isCoreDevice()` returns `true` for BANGLE2 only by falling through
+`else -> true`, not by a deliberate choice. Whether a bring-up board should
+be treated as a Core device for firmware-update purposes (which decides
+whether Memfault or the cohorts service is queried) is a real question that
+should be decided consciously, not inherited by omission. It is out of
+scope for the minimal platform-id registration and is left for a separate,
+explicitly-reasoned change if the answer is "no". The operator's
+"Disable FW update notifications" mitigation covers the immediate risk
+regardless of how this is answered.
 
 The pessimistic framing ("registering closes the channel") and the
 "wrong watchType is live" symptom are the SAME lever, not opposed items:
