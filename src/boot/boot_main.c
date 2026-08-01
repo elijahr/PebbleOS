@@ -257,6 +257,14 @@ __attribute__((noreturn)) static void start_firmware(void) {
   __DSB();
   __ISB();
   __asm volatile("msr msp, %0\n" : : "r"(sp) : "memory");
+  // Restore the post-reset interrupt state the firmware expects. A firmware
+  // that boots at 0x0 straight from a hardware reset runs with PRIMASK clear.
+  // We set PRIMASK above only to keep the VTOR/MSP switch atomic; clear it now
+  // (cpsie i -- a single instruction, no stack use, safe after the msp swap)
+  // so the firmware starts exactly as it would after reset. Leaving PRIMASK
+  // set makes FreeRTOS's `svc 0` at xPortStartScheduler unable to be taken,
+  // escalating to a forced HardFault (HFSR.FORCED, CFSR==0).
+  __enable_irq();
   __asm volatile("bx %0\n" : : "r"(pc));
   __builtin_unreachable();
 }
