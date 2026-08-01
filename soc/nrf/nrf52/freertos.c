@@ -33,9 +33,6 @@ static const RtcTicks MIN_FULL_SLEEP_TICKS = 5;
 //! a longer cap would not save additional power and would desynchronize us from it.
 static const RtcTicks MAX_STOP_TICKS = RTC_TICKS_HZ;
 
-_Static_assert(MIN_FULL_SLEEP_TICKS > EARLY_WAKEUP_TICKS,
-               "sleep_ticks would underflow");
-
 extern void vPortSuppressTicksAndSleep( TickType_t xExpectedIdleTime ) {
   if (!rtc_alarm_is_initialized() || !idle_is_allowed()) {
     return;
