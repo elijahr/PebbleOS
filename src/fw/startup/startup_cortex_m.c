@@ -54,6 +54,21 @@ NORETURN Reset_Handler(void) {
   // NFCPINS block in SystemInit. Write ONLY when the field is at reset
   // default (pure 1->0 NVMC program; no erase). NEVER page-erase UICR: that
   // clears APPROTECT and can brick the debug port on new silicon.
+  //
+  // Keep that last sentence, but do not reason from it on bangle2: the
+  // rationale is inverted for this board's silicon and the rule survives for
+  // a different reason. The bench unit is rev 1/2 "old APPROTECT" (FICR
+  // INFO.VARIANT reads AAD0, an Axx build code, and UICR.APPROTECT reads
+  // 0xFFFFFFFF/erased with a fully working debug port). There, erased means
+  // DISABLED: clearing APPROTECT leaves the port OPEN, and it is WRITING
+  // 0x5A that enables protection and permanently kills SWD. The sentence is
+  // correct for rev 3+ parts, which is why it stays -- this file is shared
+  // with other nRF boards.
+  //
+  // The prohibition holds on bangle2 regardless, independently of APPROTECT:
+  // a UICR page-erase also wipes REGOUT0 and NFCPINS, and REGOUT0 is exactly
+  // what the block below exists to repair. Right rule, wrong reason, for
+  // this board. See docs/boards/bangle2/index.md, "APPROTECT gate".
   if ((NRF_UICR->REGOUT0 & UICR_REGOUT0_VOUT_Msk) ==
       (UICR_REGOUT0_VOUT_DEFAULT << UICR_REGOUT0_VOUT_Pos)) {
     NRF_NVMC->CONFIG = NVMC_CONFIG_WEN_Wen;
