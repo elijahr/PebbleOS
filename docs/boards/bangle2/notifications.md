@@ -459,25 +459,38 @@ shows `UNKNOWN`, and the type of watch becomes a default value that is not
 correct for this board. The check for a new firmware version also fails with
 `UpdateCheckFailed(error=Unknown platform)`.
 
-The correction is upstream, in `coredevices/mobileapp`: add an entry for
-`BANGLE2(22)`.
+The correction is an entry for `BANGLE2(22)` in the table. Make it on the
+operator's copy of the application. No work goes from this project to the
+repository of the manufacturer. If the operator sends it there, the operator
+does that separately.
 
 One result of `UNKNOWN` is useful. The check for the hardware revision at
-`FirmwareUpdater.kt:126` compares the platform of the watch with the platform
-of the firmware. Both are `UNKNOWN`, so the check permits the sideload. The
-check for the slot does not apply to recovery firmware. Therefore the procedure
-above is possible today.
+`FirmwareUpdater.kt:125-126` compares the platform of the watch with the
+platform of the firmware. Before the entry, both values are `UNKNOWN` and they
+agree, so the check permits the sideload. The check for the slot does not apply
+to recovery firmware.
 
-An entry for `BANGLE2(22)` stops this useful result. After the change, the
-platform of the watch is 22 and the platform of the firmware stays `UNKNOWN`.
-The two values do not agree, and the check refuses the sideload.
+An earlier version of this page said that the entry stops this useful result.
+That is NOT correct, and the reason has importance for anybody who writes such
+an entry.
 
-The sequence was therefore important. The sideload was done first, on
-2026-07-28. Thus this hazard is now in the past for this watch. Two conditions
-stay true for other work:
+Both values come from the same table. The platform of the watch comes from
+`fromProtocolNumber(22)`, which compares the field `protocolNumber`. The
+platform of the firmware comes from `fromHWRevision`, which compares the field
+`revision` with the field `hwrev` in the manifest of the image. Both archived
+images give `hwrev=bangle2`. Therefore an entry that has BOTH the number 22 and
+the revision string `bangle2` moves the two values together, from `UNKNOWN` to
+`BANGLE2`. They still agree, and the check still permits the sideload.
 
-- For a watch that has no PRF image, do the sideload before the upstream
-  change.
-- If the upstream change comes first, the change must also give a correct
-  result for the hardware revision `bangle2`. If it does not, the recovery path
-  closes.
+The entry that is on the operator's copy has both:
+`BANGLE2(22u, WatchType.FLINT, "bangle2")`.
+
+The danger is real, but it is conditional. An entry that gives the number and
+NOT the revision string moves only one of the two values. The values then
+disagree, and the check refuses the sideload. Therefore:
+
+- Give the revision string. It is not optional.
+- The revision string must be the same as the field `hwrev` in the manifest of
+  the image. For this board that is `bangle2`.
+- With a correct entry the sequence of the work does not matter. If you are not
+  sure that the entry is correct, do the sideload first.
