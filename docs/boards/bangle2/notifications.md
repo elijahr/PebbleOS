@@ -201,6 +201,30 @@ The watch then does these steps:
   firmware region, erases it, and copies the image. See
   `src/fw/main.c:364` and `src/fw/services/prf_update/service.c:70-81`.
 
+Step 4 is necessary. Do not omit it. A recovery-only installation does not make
+a reset by itself, and it leaves the watch in the firmware-update run level
+until something resets it.
+
+The cause is a path that has no reboot. The update service sets
+`RunLevel_FirmwareUpdate` at `src/fw/services/firmware_update/service.c:179`.
+It puts the level back to `RunLevel_Normal` at `:218` only when the update
+FAILS. The comment there says "If we succeeded, we'll reboot shortly." For a
+recovery object there is no reboot: `ObjectRecovery` sets
+`BOOT_BIT_NEW_PRF_AVAILABLE` and falls through
+(`src/fw/services/put_bytes/put_bytes.c:512-516`). Thus a SUCCESSFUL recovery
+installation never puts the run level back.
+
+In that run level, two services stay off. Their masks are `R_Normal` only, in
+the table at `src/fw/services/services_common/service.c`:
+
+- `touch_sensor_set_enabled` — the touch screen does not respond.
+- `hrm_manager_enable` — the heart-rate monitor stays off.
+
+Bluetooth is NOT affected: `bt_ctl_set_enabled` has the mask
+`R_FirmwareUpdate | R_Normal`, so the link stays up. A watch that seems dead to
+touch after a recovery installation is in this run level. The reset in step 4
+corrects it. (Behaviour found by pebble-ble-2.)
+
 `CONFIG_SERVICE_PRF_UPDATE=y` is in the build that is on the watch. Therefore
 the watch has this path already.
 
@@ -233,6 +257,21 @@ is no use of the symbol in `prf_update`.
   Bluetooth settings of the phone. Do not make a new pair. This condition is
   temporary. Make the reset of the watch by hand. The link then comes back, and
   the pair stays correct. A new pair is not necessary and wastes time.
+
+  The cause of this condition is NOT known. Before you make the reset, read
+  these two words over SWD, because the reset destroys the evidence:
+
+  - `reboot_reason` at `0x20000014`
+  - `s_last_reboot_reason_code` at `0x20016553`
+
+  A value of `0x11` in the second word is an assert, and the watch stopped
+  because of a fault. Any other value shows that the watch made the
+  disconnection on purpose. The record of 2026-07-28 gives a graceful
+  disconnection: the phone log has `status=19`, which is the HCI reason `0x13`,
+  "Remote User Terminated Connection". An assert does not make a graceful
+  disconnection; it gives a supervision timeout, which is `status=8`. Thus the
+  fault path is improbable here, but nobody read the two words at the time.
+  Read them if this happens again. (Method from pebble-ble-2.)
 
 ### Results of the procedure on 2026-07-28
 
