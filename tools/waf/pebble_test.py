@@ -560,21 +560,25 @@ def clar(
 
     for test_source in test_sources:
         if test_name is None:
-            test_name = test_source.name
-            test_name = test_name[: test_name.rfind(".")]  # Scrape the extension
+            # Derive the name from this source's own filename, minus the extension.
+            source_test_name = test_source.name
+            source_test_name = source_test_name[: source_test_name.rfind(".")]
+        else:
+            # An explicitly passed name wins for every source.
+            source_test_name = test_name
 
-    for platform in platforms:
-        add_clar_test(
-            bld,
-            test_name,
-            test_source,
-            sources_ant_glob,
-            sources,
-            test_libs,
-            override_includes,
-            add_includes,
-            defines,
-            runtime_deps,
-            platform,
-            use,
-        )
+        for platform in platforms:
+            add_clar_test(
+                bld,
+                source_test_name,
+                test_source,
+                sources_ant_glob,
+                sources,
+                test_libs,
+                override_includes,
+                add_includes,
+                defines,
+                runtime_deps,
+                platform,
+                use,
+            )
