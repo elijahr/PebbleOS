@@ -2,9 +2,15 @@ name: Build Firmware
 
 on:
   push:
-    branches: [main]
+    branches: [main, bangle2-board]
+  # `branches` filters the BASE of the pull request, not the head. The port's
+  # feature branches target `bangle2-board` rather than `main`, so a filter of
+  # [main] alone silently skips every one of them: only compliance.yml runs
+  # (it has no branch filter), and its green check reads as "CI passed" while
+  # nothing has been compiled. Keep `bangle2-board` here so those PRs get a
+  # real build.
   pull_request:
-    branches: [main]
+    branches: [main, bangle2-board]
 
 jobs:
   changes-firmware:
