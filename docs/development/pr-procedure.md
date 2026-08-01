@@ -15,10 +15,18 @@ The fork uses two remotes:
 | Remote | URL | Use |
 | --- | --- | --- |
 | `origin` | `https://github.com/elijahr/PebbleOS.git` | The fork. Push here. |
-| `upstream` | `https://github.com/coredevices/PebbleOS.git` | Canonical. Never push here. |
+| `upstream` | `https://github.com/coredevices/PebbleOS.git` | Canonical. Fetch only. Never push here. |
 
-Push all work to `origin`. Never push to `upstream`. The operator submits work
-to the canonical repository manually.
+Push all work to `origin`. Never push to `upstream`. The `upstream` remote
+exists to fetch from. Nobody pushes to it.
+
+No session submits work to `coredevices`. Upstream submission is not a step in
+this procedure. If the operator submits anything upstream, the operator does it
+personally, outside this procedure.
+
+This rule covers vendored and submodule content as well. A change to a
+submodule such as `pebbleos-nonfree` goes on the operator's fork of that
+submodule. It does not go to the submodule's canonical repository.
 
 The remotes were renamed on 2026-08-01. Before the rename, the fork remote was
 named `elijahr`, and `origin` pointed at `coredevices`. Any instruction that
