@@ -10,6 +10,7 @@ def compress(task):
 
     cmd = [
         "xz",
+        "--force",
         "--keep",
         "--check=crc32",
         "--lzma2=dict=4KiB",
