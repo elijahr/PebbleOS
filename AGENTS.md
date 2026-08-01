@@ -184,11 +184,14 @@ notifications. See R1 (near-term metadata fix) and R10 (bootloader + PRF).
 - [ ] **R2 — Display white-border / top-cutout anomaly.** Border constant is
   BLACK yet renders white → suspect 3bpp polarity / bit-reversal in encode,
   or Y-offset off-by-one. Bench debug.
-- [ ] **R3 — Tickless-idle time stall (FIX WRITTEN, UNBUILT; was a REGRESSION).**
-  STATUS: the change below is source-reviewed only. Nobody has compiled it —
-  `arm-none-eabi-gcc` was not installed on the machine where it was written, and
-  CI does not build this branch (see the `branches: [main]` trigger gap). Build
-  it before you trust it. Commit
+- [ ] **R3 — Tickless-idle time stall (FIX BUILDS AND TESTS GREEN, NOT BENCH-VERIFIED;
+  was a REGRESSION).**
+  STATUS: builds clean on every nRF52 board and the host test suite passes
+  (Build Firmware, Build PRF, bangle2 NimBLE, Test — all green on `85df3c98c`).
+  It has NEVER RUN ON HARDWARE. Nobody has watched a real watch sleep and wake
+  with this change in it, and there is no host test covering `rtc_alarm_set` or
+  the tickless path, so green here means "compiles and breaks nothing else", not
+  "the clamp does what it claims". Bench-verify before relying on it. Commit
   `011bb5a8d` ("soc/nrf52: cleanup sleep code") deleted
   `MAX_STOP_TICKS = RTC_TICKS_HZ` and the clamp
   `MIN(xExpectedIdleTime - EARLY_WAKEUP_TICKS, MAX_STOP_TICKS)` in
