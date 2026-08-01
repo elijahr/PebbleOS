@@ -16,10 +16,18 @@ config FW_FLASH_SIZE
     default 0x80000 if RECOVERY_FW && !MFG
     default 0xD1000
 
-# Bare-metal full-flash image at 0x0: no MBR, no SoftDevice, no stock
-# bootloader. SWD is the only delivery path. The SoC default 0x8000 is
-# neutralized for this board by the !BOARD_BANGLE2 guard in
-# soc/nrf/Kconfig.defconfig. The image spans 0x0-0xD1000; the 0x2F000
-# (188 KiB) of internal flash above it is free for future growth.
+# The firmware links behind the 32 KiB bootloader (src/boot) at 0x8000, like
+# every other nRF board. The bootloader owns reset at 0x0-0x8000, selects the
+# normal firmware or the PRF, and starts the chosen image here. The image spans
+# 0x8000-0xD9000; the 0x27000 (156 KiB) of internal flash above it is free.
+#
+# The SoC default (soc/nrf/Kconfig.defconfig) is `0x8000 if !BOARD_BANGLE2`, so
+# for this board the SoC default does NOT fire and this board override is what
+# applies -- setting it to 0x8000 here is sufficient (verified 2026-08-01;
+# changing this file alone relinks the firmware at 0x8000).
+#
+# COUPLED CHANGE: a firmware at 0x8000 does not boot without the bootloader
+# flashed at 0x0, and the out-of-repo Renode boot harness asserts app_base==0x0
+# and must be updated to match. See the R10 design doc, section 4.0.
 config FLASH_OFFSET
-    default 0x0
+    default 0x8000
