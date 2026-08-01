@@ -264,6 +264,47 @@ def build_product_source_files(
     return product_objects
 
 
+# Files the clar harness generator reads. clar.py is the generator itself and
+# embeds the C sources it copies into the build directory; clar.py picks one
+# clar_print_*.c at run time, so both are listed.
+CLAR_TOOL_FILES = [
+    "clar.py",
+    "clar.c",
+    "clar.h",
+    "clar_categorize.c",
+    "clar_fixtures.c",
+    "clar_fs.c",
+    "clar_mock.c",
+    "clar_print_default.c",
+    "clar_print_tap.c",
+    "clar_sandbox.c",
+]
+
+
+def get_clar_tool_nodes(bld):
+    """Resolve CLAR_TOOL_FILES to nodes, once per build.
+
+    Every harness task declares these as implicit dependencies, so editing the
+    generator invalidates the generated clar_main.c instead of leaving every
+    existing build tree with a stale copy.
+    """
+    nodes = getattr(bld, "clar_tool_nodes", None)
+    if nodes is not None:
+        return nodes
+
+    clar_dir = bld.env.CLAR_DIR
+    nodes = []
+    for name in CLAR_TOOL_FILES:
+        path = os.path.join(clar_dir, name)
+        node = bld.root.find_node(path)
+        if node is None:
+            raise Errors.WafError("clar tool file not found: {}".format(path))
+        nodes.append(node)
+
+    bld.clar_tool_nodes = nodes
+    return nodes
+
+
 def get_bitdepth_for_platform(bld, platform):
     if platform in ("obelix", "gabbro"):
         return 8
@@ -356,6 +397,9 @@ def add_clar_test(
         rule=_generate_clar_harness,
         source=test_source,
         target=[clar_harness, test_dir.make_node("clar.h")],
+        # Implicit deps, not extra sources: the rule indexes task.inputs[0] for
+        # the test source, so these must not land in inputs.
+        deps=get_clar_tool_nodes(bld),
     )
 
     src_includes = [
