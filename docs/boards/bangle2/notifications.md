@@ -396,6 +396,59 @@ For the record, the phone takes no automatic action. In `libpebble3`, the field
 See `boards/bangle2/Kconfig:37-44`. Therefore the command gives a normal
 restart.
 
+### A report that is already not true: dictation
+
+The rule above is about a change that was refused. This is a report that the
+firmware already makes and that is not true.
+
+At connection the watch sends a field of capabilities. The function
+`prv_send_watch_versions` sets bit 7, `voice_api_support`, at
+`src/fw/kernel/system_versions.c:122`. The board has no microphone.
+
+Do not read the missing guard as an error of the person who wrote the line. The
+function has a rule, and bit 7 obeys it. Every bit for a capability is set
+without a condition (:115-123). Only the bits that report the presence of an
+application have guards: `APP_ID_SEND_TEXT` at :125-127, `APP_ID_WEATHER` at
+:129-131, `APP_ID_REMINDERS` at :132-135, and `APP_ID_WORKOUT` at :136-138.
+
+The fault is in the rule. The rule assumes that every board has the hardware for
+every capability. That was true for the boards that existed when the function
+was written. It is not true for this board. Thus the correction is a new guard,
+not the repair of a guard that somebody forgot.
+
+`CONFIG_MIC` is not in `build/autoconf.h` and not in `boards/bangle2/defconfig`.
+Thus the firmware cannot do what the bit says:
+
+- `applib/voice/dictation_session.c:17` puts the implementation inside
+  `#ifdef CONFIG_MIC`. The alternative code gives
+  `DictationSessionStatusFailureInternalError`.
+- `applib/wscript_build:45-46` does not compile `voice/voice_window.c`.
+- `services/voice/Kconfig:4-7` makes `SERVICE_VOICE` default to yes only with
+  `MIC`, so `services/wscript_build:137-138` does not use the directory
+  `voice/`. The directory `voice_endpoint/` is in the image, but its only user
+  is in `voice/`. It is dead code.
+- `timeline_actions.c:905-912` refuses the option `ReplyOption_Voice`, and the
+  menu entry at :943-951 is not in the image.
+
+The phone reads the bit and shows a part for speech recognition in the sequence
+for a new watch: `composeApp` `WatchOnboardingScreen.kt:310`. Thus the user sees
+a function that the hardware cannot do.
+
+The correction is probably a guard on `CONFIG_MIC` at `system_versions.c:122`.
+That file is in the kernel and other boards use it. Do not make that change as
+part of the work for notifications. It is recorded here because the examination
+of the notifications found it.
+
+Bit 9, `notification_filtering_support`, is NOT the same and is NOT a false
+report. The firmware has the function:
+`services/notifications/ancs/ancs_filtering.c` is in the image. The function
+operates only for notifications from ANCS, which is the protocol of iOS. An
+Android phone does not send them, and the phone application does not send the
+preferences to the watch for Android
+(`LibPebbleModule.android.kt:81` gives `syncNotificationApps = false`).
+Therefore the report is true and the function is only not reachable with an
+Android phone. Do not "correct" this one.
+
 ## Note about the platform identifier
 
 This subject is separate from the recovery firmware version. Do not mix them.
