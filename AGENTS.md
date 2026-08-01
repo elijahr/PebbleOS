@@ -46,6 +46,21 @@ PebbleOS is the operating system running on Pebble smartwatches.
 - Build firmware: `./pbl build`
 - Run tests: `./pbl test`
 
+### Read the guards, not just the rows
+
+Two sessions independently made the same wrong claim about the same table
+within an hour: both read its rows and neither read the `#if defined(...)`
+around them. The rows described behavior that is compiled out on this board.
+
+"Read the table" and "read the guards around the table" feel like one act and
+are two. The same shape appears without a preprocessor: a function body read
+without its early returns, a config value read without the conditional that
+overrides it. The qualifier always sits somewhere the eye treats as scaffolding
+rather than content.
+
+Before you claim a table, an enum, or a list does something, check what
+compiles it in.
+
 ## Adding a new SDK function
 
 When exposing a new function to third-party apps (i.e. anything declared
