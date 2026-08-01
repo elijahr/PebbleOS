@@ -178,6 +178,23 @@ def summary(bld):
         raise Errors.WafError("test failed")
 
 
+def check_regex_matched_a_test(bld):
+    """Fail the run if --match/-M selected no tests at all.
+
+    Without this, an unmatched -M creates no tasks, summary() returns early on
+    the empty result list, and the run exits 0 having tested nothing.
+    """
+    if not bld.options.regex:
+        return
+
+    if getattr(bld, "clar_regex_matches", 0) == 0:
+        bld.fatal(
+            'No tests matched --match/-M "%s". The pattern is a regex matched '
+            "against the test name (e.g. test_atoi), not against the test "
+            "source path." % bld.options.regex
+        )
+
+
 @taskgen_method
 @feature("test_product_source")
 def test_product_source_hook(self):
@@ -272,9 +289,12 @@ def add_clar_test(
 ):
 
     if bld.options.regex:
-        filename = str(test_source).strip()
-        if not re.match(bld.options.regex, filename):
+        # Match the test name, not str(test_source): Node.__str__ is the
+        # absolute path, and re.match anchors at position 0, so a plain
+        # "-M test_atoi" could never match anything.
+        if not re.match(bld.options.regex, test_name):
             return
+        bld.clar_regex_matches = getattr(bld, "clar_regex_matches", 0) + 1
 
     platform_set = set(["default", "asterix", "obelix", "gabbro"])
 
@@ -512,6 +532,11 @@ def clar(
 
     if test_sources_ant_glob is None and not test_sources:
         raise Exception()
+
+    # Runs after every clar() call has declared its tests.
+    if not getattr(bld, "added_regex_check_fun", False):
+        bld.add_post_fun(check_regex_matched_a_test)
+        bld.added_regex_check_fun = True
 
     if test_sources_ant_glob in bld.env.BROKEN_TESTS:
         Logs.pprint(
