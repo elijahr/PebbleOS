@@ -174,7 +174,7 @@ static void prv_restore_rtc_time_state(void) {
     s_time_tick_base = 0;
   } else {
     RtcIntervalTicks current_ticks = prv_get_rtc_interval_ticks();
-    const int32_t ticks_since_last_save = prv_elapsed_ticks(last_save_time_ticks * RTC_TICKS_HZ, current_ticks);
+    const int32_t ticks_since_last_save = prv_elapsed_ticks(last_save_time_ticks, current_ticks);
     s_time_base = last_save_time + (ticks_since_last_save / RTC_TICKS_HZ);
     s_time_tick_base = -(((int64_t)current_ticks) % RTC_TICKS_HZ);
   }
