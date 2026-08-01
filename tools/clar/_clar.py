@@ -101,7 +101,7 @@ class ClarTestBuilder:
                     self._process_test_file(test_name, f.read())
 
     def load_file(self, filename):
-        with open(filename) as f:
+        with open(filename, encoding="latin-1") as f:
             test_name = os.path.basename(filename)[:-2]
             self._process_test_file(test_name, f.read())
 
