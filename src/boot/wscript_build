@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Builds the standalone nRF52840 bootloader ELF (linked at flash 0x0,
-# size <= 32 KiB). Separate from the firmware image; walking skeleton only.
+# size <= 32 KiB). Separate from the firmware image.
 
 import tools.waf.objcopy as objcopy
 
@@ -12,10 +12,15 @@ import tools.waf.objcopy as objcopy
 system_nrf = bld.path.make_node(
     "../../third_party/hal_nordic/nrfx/mdk/system_nrf52840.c")
 
+# Reuse the firmware's crc32 verbatim so the bootloader computes the retained
+# page CRC and the firmware-image CRC exactly the way the firmware does.
+crc32 = bld.path.make_node("../../lib/util/crc32.c")
+
 sources = [
     bld.path.make_node("startup_boot.c"),
     bld.path.make_node("vector_table_boot.c"),
     bld.path.make_node("boot_main.c"),
+    crc32,
     system_nrf,
 ]
 
