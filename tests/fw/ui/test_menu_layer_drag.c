@@ -240,14 +240,16 @@ void test_menu_layer_drag__cleanup(void) {}
 // Tests
 ////////////////////////////////////
 
-// F-SM: content (2 rows * 44px = 88px) fits entirely inside the 168px frame, so the content
-// offset can never actually change (scroll_layer's own clamp holds it at 0) and the
-// offset-changed handler cannot run -- the offset assertion below holds no matter what the
-// reconciliation code does (or doesn't do). The final assertion is unfalsifiable here too:
-// touch_click_suppress_mark_consumed() (scroll_layer.c) only fires when the offset actually
-// changes, which never happens for this 2-row menu, so should_drop_click() trivially returns
-// false regardless of whether suppression logic is correct. This test exercises the short-menu
-// code path without proving either assertion.
+// Content (2 rows * 44px = 88px) fits entirely inside the 168px frame, so scroll_layer's clamp
+// pins the offset at 0 no matter how far the drag travels. The offset assertion is therefore a
+// FIXTURE PRECONDITION, not a result: it documents that this menu really is unscrollable.
+//
+// The click assertion is the one under test, and it is falsifiable. Suppression hangs on
+// scroll_layer.c's `if (after.y != before.y)` guard around touch_click_suppress_mark_consumed():
+// drop that guard so a drag marks the click consumed unconditionally, and this test fails
+// (should_drop_click() returns true). It is the only case in this suite that catches that
+// mutation -- every other drag test scrolls a long menu, where the guard is true either way.
+// Concretely: a user flicking a two-item menu must still get a select-click.
 void test_menu_layer_drag__short_menu_does_not_suppress_click(void) {
   prv_init_menu(2, true);
 
