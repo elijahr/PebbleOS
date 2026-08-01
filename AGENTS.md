@@ -154,8 +154,16 @@ notifications. See R1 (near-term metadata fix) and R10 (bootloader + PRF).
   Open follow-ups: notifications blocked by the recovery-mode/`recoveryFwVersion=null`
   gate (near-term fix in progress on branch `bangle2-notifications`; durable fix
   = R10); V4 robustness + V5 coexistence; platform-22 `UNKNOWN`/FW-update
-  cosmetics (register BANGLE2(22) upstream in `libpebble3`); a one-off
-  SM/pairing-timeout assert (`0x11`) to root-cause. Fix R3 before power work.
+  cosmetics (register BANGLE2(22) upstream in `libpebble3`). Fix R3 before
+  power work. The one-off `0x11` assert seen during a failed re-pair is
+  ROOT-CAUSED AND FIXED: `bt_driver_advert_advertising_disable` checked
+  `ble_gap_adv_active()` without the host lock, then asserted on any non-zero
+  from `ble_gap_adv_stop()`, which re-checks under the lock and reports
+  `BLE_HS_EALREADY` when advertising stopped in between — a real two-task race,
+  since that runs on the comm task while the NimBLE host task stops advertising
+  by itself on connect, disconnect, or pairing timeout. `BLE_HS_EALREADY` and
+  `BLE_HS_EDISABLED` are now treated as success, since both mean advertising is
+  already off, which is what the call wanted.
 - [ ] **R2 — Display white-border / top-cutout anomaly.** Border constant is
   BLACK yet renders white → suspect 3bpp polarity / bit-reversal in encode,
   or Y-offset off-by-one. Bench debug.

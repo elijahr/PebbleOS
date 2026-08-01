@@ -9,6 +9,7 @@
 #include <bluetooth/pairing_confirm.h>
 #include <comm/bt_lock.h>
 #include <host/ble_gap.h>
+#include <host/ble_hs.h>
 #include <host/ble_hs_hci.h>
 #include <kernel/pbl_malloc.h>
 #include <os/os_mbuf.h>
@@ -60,6 +61,20 @@ void bt_driver_advert_advertising_disable(void) {
   }
 
   rc = ble_gap_adv_stop();
+
+  // The check above runs without the host lock, but ble_gap_adv_stop() re-checks
+  // under it and reports BLE_HS_EALREADY if advertising stopped in between. That
+  // race is expected here: this runs on the comm task while the NimBLE host task
+  // stops advertising on its own when a connection completes (legacy advertising
+  // auto-stops on connect) or when a disconnect or pairing timeout is processed.
+  // BLE_HS_EDISABLED is the same story if the host is shutting down. Both mean
+  // advertising is not running, which is exactly what this function wants, so
+  // neither is a failure. Asserting on them reboots the watch (reason 0x11) for
+  // a benign race -- observed once on silicon during a failed re-pair.
+  if (rc == BLE_HS_EALREADY || rc == BLE_HS_EDISABLED) {
+    return;
+  }
+
   PBL_ASSERT(rc == 0, "Failed to stop advertising (0x%04x)", (uint16_t)rc);
 }
 
