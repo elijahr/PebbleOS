@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 Core Devices LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Builds the standalone nRF52840 bootloader ELF (linked at flash 0x0,
+# size <= 32 KiB). Separate from the firmware image; walking skeleton only.
+
+import tools.waf.objcopy as objcopy
+
+# nrfx SystemInit lives in the MDK; compile it in so FPU/errata init matches
+# the firmware rather than stubbing it. NRF52840_XXAA is already in
+# bld.env.DEFINES (appended by third_party/hal_nordic before _build_fw runs).
+system_nrf = bld.path.make_node(
+    "../../third_party/hal_nordic/nrfx/mdk/system_nrf52840.c")
+
+sources = [
+    bld.path.make_node("startup_boot.c"),
+    bld.path.make_node("vector_table_boot.c"),
+    bld.path.make_node("boot_main.c"),
+    system_nrf,
+]
+
+boot_elf = bld.path.get_bld().make_node("bootloader.elf")
+boot_ld = bld.path.make_node("boot.ld").path_from(bld.path)
+
+# Arch flags (-mcpu=cortex-m4 -mthumb -mfloat-abi=softfp -mfpu=fpv4-sp-d16)
+# come from the firmware env's LINKFLAGS automatically. Keep the boot-specific
+# additions minimal and use a dedicated map name (NOT pebbleos.map).
+boot_linkflags = [
+    "-Wl,-Map=bootloader.map",
+    "-Wl,--gc-sections",
+    "-nostartfiles",
+]
+
+# fw_includes provides <nrfx.h> and CMSIS core headers (transitively via
+# hal_nordic / cmsis_core). No firmware objects are linked in.
+#
+# Derive a private env and append the boot linkflags to it: the linkflags=
+# kwarg alone is not honored by this waf (the firmware link does the same
+# explicit append). A derived env avoids mutating the shared firmware env.
+boot_env = bld.env.derive()
+boot_env.append_value("LINKFLAGS", boot_linkflags)
+
+bld.program(
+    env=boot_env,
+    source=sources,
+    target=boot_elf,
+    ldscript=boot_ld,
+    linkflags=boot_linkflags,
+    use=["fw_includes"],
+)
+
+# Produce hex and bin alongside the ELF for a debugger / flasher.
+bld(rule=objcopy.objcopy_hex,
+    source=boot_elf,
+    target=bld.path.get_bld().make_node("bootloader.hex"))
+bld(rule=objcopy.objcopy_bin,
+    source=boot_elf,
+    target=bld.path.get_bld().make_node("bootloader.bin"))
+
+# vim:filetype=python
