@@ -193,9 +193,13 @@ static void nvmc_write(uint32_t dst, const uint8_t *src, uint32_t len) {
 // -----------------------------------------------------------------------------
 // Image validation + copy
 
-//! Validate the legacy FirmwareDescription at external NOR `src_addr`. On
-//! success writes the total image length (header + payload) to *out_total.
-static bool image_validate(uint32_t src_addr, uint32_t *out_total) {
+//! Validate the legacy FirmwareDescription at external NOR `src_addr`. The
+//! stored image is [12-byte FirmwareDescription][payload]; the payload is the
+//! executable firmware, whose vector table is at its first byte (the firmware
+//! links with its vector table AT FW_EXEC_BASE -- CONFIG_FIRMWARE_OFFSET is 0
+//! for this board, so the execution image reserves NO room for the header).
+//! On success writes the payload length and its expected CRC to the out params.
+static bool image_validate(uint32_t src_addr, uint32_t *out_payload_len, uint32_t *out_checksum) {
   FirmwareDescription desc;
   nor_read(src_addr, (uint8_t *)&desc, sizeof(desc));
   if (desc.description_length != FW_DESCRIPTION_LENGTH) {
@@ -219,22 +223,27 @@ static bool image_validate(uint32_t src_addr, uint32_t *out_total) {
   if (crc != desc.checksum) {
     return false;
   }
-  *out_total = FW_DESCRIPTION_LENGTH + desc.firmware_length;
+  *out_payload_len = desc.firmware_length;
+  *out_checksum = desc.checksum;
   return true;
 }
 
-//! Copy `total` bytes from external NOR `src_addr` into the internal execution
-//! slot at FW_EXEC_BASE, erasing first. Assumes image_validate() passed.
-static void image_copy(uint32_t src_addr, uint32_t total) {
-  nvmc_erase_range(FW_EXEC_BASE, FW_EXEC_BASE + total);
+//! Copy the `payload_len`-byte firmware payload from external NOR -- skipping
+//! the 12-byte FirmwareDescription header at `src_addr` -- into the internal
+//! execution slot at FW_EXEC_BASE, erasing first. The header is metadata and is
+//! NOT copied: FW_EXEC_BASE must hold the firmware's vector table so the CPU can
+//! boot it. Assumes image_validate() passed.
+static void image_copy(uint32_t src_addr, uint32_t payload_len) {
+  const uint32_t payload_src = src_addr + FW_DESCRIPTION_LENGTH;
+  nvmc_erase_range(FW_EXEC_BASE, FW_EXEC_BASE + payload_len);
   static uint8_t buf[NOR_CHUNK];
   uint32_t off = 0;
-  while (off < total) {
-    uint32_t chunk = (total - off) < NOR_CHUNK ? (total - off) : NOR_CHUNK;
+  while (off < payload_len) {
+    uint32_t chunk = (payload_len - off) < NOR_CHUNK ? (payload_len - off) : NOR_CHUNK;
     // NVMC writes whole words; round the tail up (NOR read gives us the bytes,
     // the erased flash beyond the image reads back as 0xFF regardless).
     uint32_t wchunk = (chunk + 3u) & ~3u;
-    nor_read(src_addr + off, buf, chunk);
+    nor_read(payload_src + off, buf, chunk);
     if (wchunk > chunk) {
       memset(&buf[chunk], 0xFF, wchunk - chunk);
     }
@@ -243,19 +252,12 @@ static void image_copy(uint32_t src_addr, uint32_t total) {
   }
 }
 
-//! Re-read the just-written internal image and confirm its FirmwareDescription
-//! CRC. Reads directly from internal flash (memory-mapped, no NOR needed).
-static bool internal_image_valid(void) {
-  const FirmwareDescription *desc = (const FirmwareDescription *)FW_EXEC_BASE;
-  if (desc->description_length != FW_DESCRIPTION_LENGTH) {
-    return false;
-  }
-  if (desc->firmware_length == 0 || desc->firmware_length > (FW_EXEC_END - FW_EXEC_BASE)) {
-    return false;
-  }
-  uint32_t crc =
-      crc32(0, (const uint8_t *)(FW_EXEC_BASE + FW_DESCRIPTION_LENGTH), desc->firmware_length);
-  return crc == desc->checksum;
+//! Re-read the just-written internal payload and confirm its CRC against the
+//! value from the source header. The header is not present at FW_EXEC_BASE (it
+//! was stripped on copy), so validate the payload bytes directly.
+static bool internal_image_valid(uint32_t payload_len, uint32_t checksum) {
+  uint32_t crc = crc32(0, (const uint8_t *)FW_EXEC_BASE, payload_len);
+  return crc == checksum;
 }
 
 // -----------------------------------------------------------------------------
@@ -304,12 +306,13 @@ void boot_main(void) {
 
   if (plan.want_copy) {
     nor_init();
-    uint32_t total = 0;
-    if (image_validate(plan.src_addr, &total)) {
+    uint32_t payload_len = 0;
+    uint32_t checksum = 0;
+    if (image_validate(plan.src_addr, &payload_len, &checksum)) {
       // Validate-before-erase held: only now do we touch the execution slot.
       boot_bits_update(BOOT_BIT_NEW_FW_UPDATE_IN_PROGRESS, 0);
-      image_copy(plan.src_addr, total);
-      if (internal_image_valid()) {
+      image_copy(plan.src_addr, payload_len);
+      if (internal_image_valid(payload_len, checksum)) {
         boot_bits_update(plan.install_bit, plan.consume_bit | BOOT_BIT_NEW_FW_UPDATE_IN_PROGRESS);
       } else {
         // Copy landed a bad image. Record a strike, clear the consume bit, and
