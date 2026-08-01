@@ -40,10 +40,13 @@ config TOUCH_WIDGET_DRAG
       sees selected. Reconciliation is scoped to real drags only: it does
       not run for animated or unanimated programmatic scrolls (e.g.
       menu_layer_set_selected_index()), which are left alone.
-      One case is intentionally not reconciled: while a center-focused
-      MenuLayer's own selection-change animation is in flight, dragging
-      moves the content offset but the selection is left as-is until that
-      animation finishes; reconciliation resumes normally afterward.
+      Notably not reconciled: (1) while a center-focused MenuLayer's own
+      selection-change animation is in flight, dragging moves the content
+      offset but the selection is left as-is until that animation
+      finishes; reconciliation resumes normally afterward. (2) if no row
+      overlaps the newly visible band (e.g. it contains only a section
+      header), the selection is left off-screen with no highlight move
+      and no selection-changed callback.
 
 module = SERVICE_TOUCH
 module-str = Touch

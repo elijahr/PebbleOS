@@ -30,4 +30,20 @@ clar(ctx,
     override_includes = ['dummy_board'],
     test_sources_ant_glob = "test_recognizer_manager.c")
 
+# The only suite that compiles the real app_state.c, so the production chain
+# layer_attach_recognizer -> app_state_recognizer_attach_count_inc ->
+# app_window_recognizer_glue_attach_count_changed -> touch_service_subscribe is linked end to
+# end instead of being short-circuited by the WEAK stubs in tests/stubs/stubs_app_state.h.
+clar(ctx,
+    sources_ant_glob = " src/fw/applib/graphics/gtypes.c" \
+                       " src/fw/applib/ui/app_window_recognizer_glue.c" \
+                       " src/fw/applib/ui/layer.c" \
+                       " src/fw/applib/ui/recognizer/recognizer.c" \
+                       " src/fw/kernel/util/segment.c" \
+                       " src/fw/process_state/app_state/app_state.c" \
+                       " tests/fw/ui/recognizer/test_recognizer_impl.c",
+    defines = ['CONFIG_TOUCH', 'CONFIG_SCREEN_COLOR_DEPTH_BITS=8'],
+    override_includes = ['dummy_board'],
+    test_sources_ant_glob = "test_app_state_recognizer_chain.c")
+
 # vim:filetype=python

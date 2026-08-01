@@ -55,8 +55,12 @@ T_STATIC void prv_focus_event_handler(PebbleEvent *e, void *context) {
 void app_window_recognizer_glue_attach_count_changed(uint16_t new_count) {
   AppWindowRecognizerGlueState *state = app_state_get_recognizer_glue_state();
 
-  if (new_count == 1) {
+  // Edge-triggered on state, not on new_count's value: new_count == 1 is reachable from both
+  // a genuine 0->1 attach and a 2->1 detach (e.g. an app with two ScrollLayers destroying
+  // one), and only the former should (re-)subscribe.
+  if ((new_count == 1) && !state->touch_subscribed) {
     touch_service_subscribe(prv_touch_handler, NULL);
+    state->touch_subscribed = true;
     if (!state->focus_subscribed) {
       state->focus_event_info = (EventServiceInfo) {
         .type = PEBBLE_APP_WILL_CHANGE_FOCUS_EVENT,
@@ -65,7 +69,7 @@ void app_window_recognizer_glue_attach_count_changed(uint16_t new_count) {
       event_service_client_subscribe(&state->focus_event_info);
       state->focus_subscribed = true;
     }
-  } else if (new_count == 0) {
+  } else if ((new_count == 0) && state->touch_subscribed) {
     // Only unsubscribe if our handler is still installed: an app that called
     // touch_service_subscribe() after us now owns the (single) raw_handler slot, and
     // unsubscribing here would silently clear the app's handler instead of ours.
@@ -73,6 +77,7 @@ void app_window_recognizer_glue_attach_count_changed(uint16_t new_count) {
     if (touch_state && (touch_state->raw_handler == prv_touch_handler)) {
       touch_service_unsubscribe();
     }
+    state->touch_subscribed = false;
     if (state->focus_subscribed) {
       event_service_client_unsubscribe(&state->focus_event_info);
       state->focus_subscribed = false;

@@ -153,6 +153,7 @@ clar(ctx,
     sources_ant_glob =
         " src/fw/applib/graphics/gcolor_definitions.c"
         " src/fw/applib/graphics/gtypes.c"
+        " src/fw/applib/ui/app_window_recognizer_glue.c"
         " src/fw/applib/ui/app_window_stack.c"
         " src/fw/applib/ui/layer.c"
         " src/fw/applib/ui/window.c"
@@ -163,7 +164,10 @@ clar(ctx,
         " tests/fakes/fake_events.c"
         " tests/stubs/stubs_click.c",
     test_sources_ant_glob = "test_window_stack.c",
-    defines=['CONFIG_SCREEN_COLOR_DEPTH_BITS=8'],
+    # CONFIG_TOUCH pulls in the real app_window_recognizer_glue.c so window.c's and
+    # window_stack.c's Task 8 glue call sites compile for real instead of linking the
+    # CONFIG_TOUCH=n no-op stubs (app_window_recognizer_glue.h).
+    defines=['CONFIG_TOUCH', 'CONFIG_SCREEN_COLOR_DEPTH_BITS=8'],
     override_includes=['dummy_board'])
 
 clar(ctx,

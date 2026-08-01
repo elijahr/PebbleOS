@@ -240,32 +240,89 @@ void test_menu_layer_drag__cleanup(void) {}
 // Tests
 ////////////////////////////////////
 
-// F-SM: content (2 rows * 44px = 88px) fits entirely inside the 168px frame, so the content
-// offset can never actually change (scroll_layer's own clamp holds it at 0) -- the offset-changed
-// handler (and therefore the reconciliation stub) never runs, per the real
-// touch_click_suppress module (not a stub -- see the plan's green-mirage warning).
-void test_menu_layer_drag__short_menu_never_fires_stub(void) {
+// Content (2 rows * 44px = 88px) fits entirely inside the 168px frame, so scroll_layer's clamp
+// pins the offset at 0 no matter how far the drag travels. The offset assertion is therefore a
+// FIXTURE PRECONDITION, not a result: it documents that this menu really is unscrollable.
+//
+// The click assertion is the one under test, and it is falsifiable. Suppression hangs on
+// scroll_layer.c's `if (after.y != before.y)` guard around touch_click_suppress_mark_consumed():
+// drop that guard so a drag marks the click consumed unconditionally, and this test fails
+// (should_drop_click() returns true). It is the only case in this suite that catches that
+// mutation -- every other drag test scrolls a long menu, where the guard is true either way.
+// Concretely: a user flicking a two-item menu must still get a select-click.
+void test_menu_layer_drag__short_menu_does_not_suppress_click(void) {
   prv_init_menu(2, true);
 
   prv_drag_updates(&s_menu_layer, 2);
   cl_assert_equal_i(scroll_layer_get_content_offset(&s_menu_layer.scroll_layer).y, 0);
-  cl_assert_equal_i(0, s_menu_layer.selection.index.row);
-  cl_assert_equal_i(0, s_selection_changed_call_count);
 
   prv_send(&s_menu_layer, TouchEvent_Liftoff, 50, 260);
   cl_assert_equal_b(touch_click_suppress_should_drop_click(), false);
 }
 
-// A small drag (offset -32) keeps row 0's [0,44] band overlapping the new visible band
-// [32,200): selection must not move even though the offset did.
+// Seeds a NON-DEFAULT selection (row 3) before dragging: asserting row==0/y==0 after a drag (the
+// default, untouched state) would be indistinguishable from the reconciliation handler never
+// running at all. Seeding row 3 first, then confirming it survives, proves the handler actually
+// evaluated the still-visible case and chose not to move it.
 void test_menu_layer_drag__selection_kept_when_visible(void) {
   prv_init_menu(10, true);
 
+  menu_layer_set_selected_index(&s_menu_layer, MenuIndex(0, 3), MenuRowAlignNone, false);
+  cl_assert_equal_i(scroll_layer_get_content_offset(&s_menu_layer.scroll_layer).y, 0);
+  cl_assert_equal_i(3, s_menu_layer.selection.index.row);
+  cl_assert_equal_i(132, s_menu_layer.selection.y);
+  s_selection_changed_call_count = 0;  // discard the set_selected_index announcement
+
+  // Offset -32 keeps row 3's [132,176] band overlapping the new visible band [32,200).
   prv_drag_updates(&s_menu_layer, 2);
   cl_assert_equal_i(scroll_layer_get_content_offset(&s_menu_layer.scroll_layer).y, -32);
+  cl_assert_equal_i(3, s_menu_layer.selection.index.row);
+  cl_assert_equal_i(132, s_menu_layer.selection.y);
+  cl_assert_equal_i(0, s_selection_changed_call_count);
+}
+
+// Boundary pair for the visibility check in prv_menu_scroll_offset_changed_handler
+// (selection_bottom > content_top_y): row 0's band is [0,44]. One pixel short of scrolling it
+// out (offset -43, content_top_y=43) must KEEP the selection.
+void test_menu_layer_drag__selection_kept_one_px_before_scrollout(void) {
+  prv_init_menu(10, true);
+
+  int16_t y = 300;
+  prv_send(&s_menu_layer, TouchEvent_Touchdown, 50, y);
+  y -= 20;
+  prv_send(&s_menu_layer, TouchEvent_PositionUpdate, 50, y);
+  y -= 20;
+  prv_send(&s_menu_layer, TouchEvent_PositionUpdate, 50, y);  // offset -32, recognizer Started
+  y -= 11;
+  prv_send(&s_menu_layer, TouchEvent_PositionUpdate, 50, y);  // offset -43
+
+  cl_assert_equal_i(scroll_layer_get_content_offset(&s_menu_layer.scroll_layer).y, -43);
   cl_assert_equal_i(0, s_menu_layer.selection.index.row);
   cl_assert_equal_i(0, s_menu_layer.selection.y);
   cl_assert_equal_i(0, s_selection_changed_call_count);
+}
+
+// The other half of the boundary pair: one pixel further (offset -44, content_top_y=44) makes
+// row 0's band [0,44] no longer overlap ([44,44] touches but does not overlap per the
+// `>`/strict-overlap check), so the selection must MOVE to row 1 ([44,88]).
+void test_menu_layer_drag__selection_moves_at_scrollout_threshold(void) {
+  prv_init_menu(10, true);
+
+  int16_t y = 300;
+  prv_send(&s_menu_layer, TouchEvent_Touchdown, 50, y);
+  y -= 20;
+  prv_send(&s_menu_layer, TouchEvent_PositionUpdate, 50, y);
+  y -= 20;
+  prv_send(&s_menu_layer, TouchEvent_PositionUpdate, 50, y);  // offset -32, recognizer Started
+  y -= 12;
+  prv_send(&s_menu_layer, TouchEvent_PositionUpdate, 50, y);  // offset -44
+
+  cl_assert_equal_i(scroll_layer_get_content_offset(&s_menu_layer.scroll_layer).y, -44);
+  cl_assert_equal_i(1, s_menu_layer.selection.index.row);
+  cl_assert_equal_i(44, s_menu_layer.selection.y);
+  cl_assert_equal_i(1, s_selection_changed_call_count);
+  cl_assert_equal_i(0, s_selection_changed_calls[0].old_index.row);
+  cl_assert_equal_i(1, s_selection_changed_calls[0].new_index.row);
 }
 
 // A larger drag (offset -52) pushes row 0's [0,44] band entirely above the new visible band
@@ -336,6 +393,38 @@ void test_menu_layer_drag__programmatic_offset_change_does_not_reconcile(void) {
   cl_assert_equal_i(2200, s_menu_layer.selection.y);
   s_selection_changed_call_count = 0;
 
+  scroll_layer_set_content_offset(&s_menu_layer.scroll_layer, GPoint(0, -100), false);
+
+  cl_assert_equal_i(scroll_layer_get_content_offset(&s_menu_layer.scroll_layer).y, -100);
+  cl_assert_equal_i(50, s_menu_layer.selection.index.row);
+  cl_assert_equal_i(2200, s_menu_layer.selection.y);
+  cl_assert_equal_i(0, s_selection_changed_call_count);
+}
+
+// Self-contained variant of the test above: the original only catches a missing
+// `s_dragging_scroll_layer = NULL` clear (scroll_layer.c's prv_drag_event_cb) when some OTHER
+// case that drives a real drag happens to run first in the same clar process and leaves that
+// file-static pointer pointed at this suite's (address-stable) s_menu_layer.scroll_layer --
+// order-dependent, and invisible when this case runs alone (`runme -tprogrammatic_...`). This
+// case drives a real drag to completion itself first, so the set/clear is exercised and checked
+// within a single test body regardless of run order or filtering.
+void test_menu_layer_drag__programmatic_offset_change_after_drag_does_not_reconcile(void) {
+  prv_init_menu(60, true);
+
+  // Real drag to completion (offset -52, see nearest_visible_row_on_scrollout): exercises
+  // prv_drag_event_cb's set of s_dragging_scroll_layer during the drag and, if the clear at the
+  // end of that function is intact, leaves it NULL again once this call returns.
+  prv_drag_updates(&s_menu_layer, 3);
+  prv_send(&s_menu_layer, TouchEvent_Liftoff, 50, 220);
+  cl_assert_equal_i(1, s_menu_layer.selection.index.row);
+
+  menu_layer_set_selected_index(&s_menu_layer, MenuIndex(0, 50), MenuRowAlignNone, false);
+  cl_assert_equal_i(50, s_menu_layer.selection.index.row);
+  cl_assert_equal_i(2200, s_menu_layer.selection.y);
+  s_selection_changed_call_count = 0;
+
+  // If s_dragging_scroll_layer were left pointing at this scroll_layer (missing clear), this
+  // programmatic call would be misidentified as a drag and incorrectly reconcile row 50 away.
   scroll_layer_set_content_offset(&s_menu_layer.scroll_layer, GPoint(0, -100), false);
 
   cl_assert_equal_i(scroll_layer_get_content_offset(&s_menu_layer.scroll_layer).y, -100);
