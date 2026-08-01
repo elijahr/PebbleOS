@@ -125,17 +125,26 @@ Two separate decisions:
 The decision to land the registration PR is the operator's; this doc
 records the analysis, the trade, and the agreed sequencing.
 
-### Open question (deferred): should BANGLE2 be a "Core device" for updates?
+### Note: false-listing BANGLE2 in isCoreDevice() is NOT an update guard
 
+An earlier draft floated adding BANGLE2 to the `isCoreDevice()` false-list
+as defense-in-depth against the update-check risk (consequence 3). That was
+mistaken, and is recorded here so nobody re-proposes it as a safety fix.
 `isCoreDevice()` returns `true` for BANGLE2 only by falling through
-`else -> true`, not by a deliberate choice. Whether a bring-up board should
-be treated as a Core device for firmware-update purposes (which decides
-whether Memfault or the cohorts service is queried) is a real question that
-should be decided consciously, not inherited by omission. It is out of
-scope for the minimal platform-id registration and is left for a separate,
-explicitly-reasoned change if the answer is "no". The operator's
-"Disable FW update notifications" mitigation covers the immediate risk
-regardless of how this is answered.
+`else -> true`, but changing it does NOT stop an update check: the three-way
+branch is UNKNOWN-shortcircuit / (isCoreDevice && MEMFAULT_TOKEN) -> memfault
+/ else -> cohorts. False-listing BANGLE2 just moves it from the memfault
+backend to the cohorts backend — a check still runs. Only the
+`platform == UNKNOWN` short-circuit or the "Disable FW update notifications"
+guard actually stops a check, and the guard is the chosen mitigation.
+
+Worse, `isCoreDevice()` gates more than the update backend: per pebble-noti-2
+it also drives language-pack resolution (`LanguagePackRepository.kt`) and a
+"Battery Life" menu item (`WatchesScreen.kt`). So flipping it is not free and
+must not be done as a casual defense-in-depth tweak. Conclusion: do NOT
+change `isCoreDevice()` for update-safety reasons; the update risk is handled
+by the guard. If the Memfault-vs-cohorts backend choice ever matters on its
+own merits, decide it then, with those two side effects in view.
 
 The pessimistic framing ("registering closes the channel") and the
 "wrong watchType is live" symptom are the SAME lever, not opposed items:
