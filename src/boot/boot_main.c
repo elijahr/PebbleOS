@@ -22,6 +22,7 @@
 
 #include <nrfx.h>
 
+#include "boot_select.h"
 #include "pbl/util/crc32.h"
 
 // -----------------------------------------------------------------------------
@@ -35,26 +36,16 @@
 //! FLASH_BASE(0) + FW_FLASH_SIZE(0xD1000). The firmware image must fit below.
 #define FW_EXEC_END 0x000D9000u
 
-//! External NOR regions (flash_region_bangle2.h).
-#define NOR_SAFE_FIRMWARE 0x00000000u    // PRF image (512 KiB region)
-#define NOR_FIRMWARE_SLOT_1 0x00100000u  // OTA / PutBytes staging (1024 KiB)
+// Boot-bit and NOR-source constants + the boot-selection state machine live in
+// boot_select.h (unit-tested off-target).
 
 // -----------------------------------------------------------------------------
-// Retained page / boot bits (mirror of src/fw/system + rtc_registers.h)
+// Retained page (mirror of src/fw/system + rtc_registers.h)
 
 #define RETAINED_BASE 0x20000000u
 #define RETAINED_WORDS 64u       // 256 bytes
 #define RETAINED_CRC_IDX 31u     // NRF_RETAINED_REGISTER_CRC
 #define RETAINED_BOOTBIT_IDX 0u  // RTC_BKP_BOOTBIT_DR
-
-#define BOOT_BIT_NEW_FW_AVAILABLE (1u << 1)
-#define BOOT_BIT_NEW_FW_UPDATE_IN_PROGRESS (1u << 2)
-#define BOOT_BIT_FW_START_FAIL_STRIKE_ONE (1u << 3)
-#define BOOT_BIT_FW_START_FAIL_STRIKE_TWO (1u << 4)
-#define BOOT_BIT_RECOVERY_LOAD_FAIL_STRIKE_ONE (1u << 5)
-#define BOOT_BIT_RECOVERY_LOAD_FAIL_STRIKE_TWO (1u << 6)
-#define BOOT_BIT_NEW_FW_INSTALLED (1u << 15)
-#define BOOT_BIT_FORCE_PRF (1u << 17)
 
 //! Legacy firmware image header at the start of an image (firmware_storage.h).
 typedef struct __attribute__((packed)) {
@@ -80,13 +71,6 @@ static void retained_load(void) {
   }
   uint32_t computed = crc32(0, s_retained, RETAINED_CRC_IDX * sizeof(uint32_t));
   s_retained_valid = (computed == s_retained[RETAINED_CRC_IDX]);
-}
-
-static bool boot_bit_test(uint32_t bit) {
-  if (!s_retained_valid) {
-    return false;  // untrusted page: treat every bit as clear (boot normal)
-  }
-  return (s_retained[RETAINED_BOOTBIT_IDX] & bit) != 0;
 }
 
 //! Mutate a boot bit and write the page (with a freshly recomputed CRC) back to
@@ -282,51 +266,30 @@ __attribute__((noreturn)) static void start_firmware(void) {
 void boot_main(void) {
   retained_load();
 
-  uint32_t src_addr = 0;
-  uint32_t consume_bit = 0;
-  uint32_t strike_one = 0;
-  uint32_t strike_two = 0;
-  bool want_copy = false;
+  const uint32_t boot_bits = s_retained_valid ? s_retained[RETAINED_BOOTBIT_IDX] : 0;
+  const BootPlan plan = boot_select(boot_bits, s_retained_valid);
 
-  if (boot_bit_test(BOOT_BIT_FORCE_PRF)) {
-    // Recovery requested. Copy the PRF from SAFE_FIRMWARE.
-    src_addr = NOR_SAFE_FIRMWARE;
-    consume_bit = BOOT_BIT_FORCE_PRF;
-    strike_one = BOOT_BIT_RECOVERY_LOAD_FAIL_STRIKE_ONE;
-    strike_two = BOOT_BIT_RECOVERY_LOAD_FAIL_STRIKE_TWO;
-    want_copy = true;
-  } else if (boot_bit_test(BOOT_BIT_NEW_FW_AVAILABLE)) {
-    // A staged normal firmware is waiting in FIRMWARE_SLOT_1.
-    src_addr = NOR_FIRMWARE_SLOT_1;
-    consume_bit = BOOT_BIT_NEW_FW_AVAILABLE;
-    strike_one = BOOT_BIT_FW_START_FAIL_STRIKE_ONE;
-    strike_two = BOOT_BIT_FW_START_FAIL_STRIKE_TWO;
-    want_copy = true;
-  }
-
-  if (want_copy) {
+  if (plan.want_copy) {
     nor_init();
     uint32_t total = 0;
-    if (image_validate(src_addr, &total)) {
+    if (image_validate(plan.src_addr, &total)) {
       // Validate-before-erase held: only now do we touch the execution slot.
       boot_bits_update(BOOT_BIT_NEW_FW_UPDATE_IN_PROGRESS, 0);
-      image_copy(src_addr, total);
+      image_copy(plan.src_addr, total);
       if (internal_image_valid()) {
-        uint32_t set = (consume_bit == BOOT_BIT_NEW_FW_AVAILABLE) ? BOOT_BIT_NEW_FW_INSTALLED : 0;
-        boot_bits_update(set, consume_bit | BOOT_BIT_NEW_FW_UPDATE_IN_PROGRESS);
+        boot_bits_update(plan.install_bit, plan.consume_bit | BOOT_BIT_NEW_FW_UPDATE_IN_PROGRESS);
       } else {
         // Copy landed a bad image. Record a strike, clear the consume bit, and
         // fall through to start whatever is in the slot (may still be the old,
         // good firmware if the erase/copy was interrupted — the strike lets a
         // later pass give up).
-        uint32_t strike = boot_bit_test(strike_one) ? strike_two : strike_one;
-        boot_bits_update(strike, consume_bit | BOOT_BIT_NEW_FW_UPDATE_IN_PROGRESS);
+        boot_bits_update(boot_next_strike(&plan, boot_bits),
+                         plan.consume_bit | BOOT_BIT_NEW_FW_UPDATE_IN_PROGRESS);
       }
     } else {
       // Invalid source image. The slot was NEVER erased: the resident image is
       // intact. Record a strike, clear the request, start the resident image.
-      uint32_t strike = boot_bit_test(strike_one) ? strike_two : strike_one;
-      boot_bits_update(strike, consume_bit);
+      boot_bits_update(boot_next_strike(&plan, boot_bits), plan.consume_bit);
     }
   }
 
