@@ -355,41 +355,41 @@ void test_bluetooth_persistent_storage__ble_store_and_get(void) {
   cl_assert_equal_b(bonding_sync_contains_pairing_info(&pairing_3, true), true);
 }
 
- void test_bluetooth_persistent_storage__get_ble_by_addr(void) {
-   bool ret;
+void test_bluetooth_persistent_storage__get_ble_by_addr(void) {
+  bool ret;
 
-   // Output variables
-   SMIdentityResolvingKey irk_out;
+  // Output variables
+  SMIdentityResolvingKey irk_out;
 
-   // Store a pairing
-   SMPairingInfo pairing = (SMPairingInfo) {
-     .irk = (SMIdentityResolvingKey) {
-       .data = {
-         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-         0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x00,
-       },
-     },
-     .identity = (BTDeviceInternal) {
-       .address = (BTDeviceAddress) {
-         .octets = {
-           0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
-         },
-       },
-       .is_classic = false,
-       .is_random_address = false,
-     },
-     .is_remote_identity_info_valid = true,
-   };
+  // Store a pairing
+  SMPairingInfo pairing = (SMPairingInfo) {
+    .irk = (SMIdentityResolvingKey) {
+      .data = {
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x00,
+      },
+    },
+    .identity = (BTDeviceInternal) {
+      .address = (BTDeviceAddress) {
+        .octets = {
+          0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+        },
+      },
+      .is_classic = false,
+      .is_random_address = false,
+    },
+    .is_remote_identity_info_valid = true,
+  };
 
-   BTBondingID id = bt_persistent_storage_store_ble_pairing(&pairing, true /* is_gateway */, NULL,
-                                                            false /* requires_address_pinning */,
-                                                            false /* auto_accept_re_pairing */);
-   cl_assert(id != BT_BONDING_ID_INVALID);
+  BTBondingID id = bt_persistent_storage_store_ble_pairing(&pairing, true /* is_gateway */, NULL,
+                                                           false /* requires_address_pinning */,
+                                                           false /* auto_accept_re_pairing */);
+  cl_assert(id != BT_BONDING_ID_INVALID);
 
-   // Read it back
-   ret = bt_persistent_storage_get_ble_pairing_by_addr(&pairing.identity, &irk_out, NULL);
-   cl_assert(ret);
-   cl_assert_equal_m(&irk_out, &pairing.irk, sizeof(irk_out));
+  // Read it back
+  ret = bt_persistent_storage_get_ble_pairing_by_addr(&pairing.identity, &irk_out, NULL);
+  cl_assert(ret);
+  cl_assert_equal_m(&irk_out, &pairing.irk, sizeof(irk_out));
 }
 
 

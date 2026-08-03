@@ -227,7 +227,7 @@ void test_calendar__init_with_future_event(void) {
   cl_assert_equal_i(10*60, stub_new_timer_timeout(timer_id) / 1000);
 }
 
-void test_calendar_handle__future_event_added_and_removed(void) {
+void test_calendar__future_event_added_and_removed(void) {
   timeline_event_init();
   cl_assert_equal_i(fake_event_get_count(), 1);
   cl_assert(!prv_get_calendar_ongoing());
@@ -263,7 +263,7 @@ void test_calendar__init_with_ongoing_event(void) {
   cl_assert_equal_i(5*60, stub_new_timer_timeout(timer_id) / 1000);
 }
 
-void test_calendar_handle__ongoing_event_added_and_removed(void) {
+void test_calendar__ongoing_event_added_and_removed(void) {
   rtc_set_time(15 * 60);
   timeline_event_init();
   cl_assert_equal_i(fake_event_get_count(), 1);
@@ -299,7 +299,7 @@ void test_calendar__init_with_past_event(void) {
   cl_assert(!stub_new_timer_is_scheduled(timer_id));
 }
 
-void test_calendar_handle__past_event_added_and_removed(void) {
+void test_calendar__past_event_added_and_removed(void) {
   rtc_set_time(30 * 60);
   timeline_event_init();
   cl_assert_equal_i(fake_event_get_count(), 1);

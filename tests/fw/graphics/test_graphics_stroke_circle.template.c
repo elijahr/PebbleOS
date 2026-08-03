@@ -229,7 +229,7 @@ extern void graphics_circle_quadrant_draw_stroked_aa(
     GContext* ctx, GPoint p, uint16_t radius, uint8_t stroke_width,
     GCornerMask quadrant);
 
-void test_graphics_draw_circle_${BIT_DEPTH_NAME}__quadrants_aa(void) {
+void test_graphics_stroke_circle_${BIT_DEPTH_NAME}__quadrants_aa(void) {
 
 #if CONFIG_SCREEN_COLOR_DEPTH_BITS == 8
 

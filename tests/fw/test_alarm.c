@@ -377,7 +377,7 @@ void test_alarm__snooze_delay(void) {
   cl_assert_equal_i(delay, 15);
 }
 
-void test_alarm__set_snooze_alarm() {
+void test_alarm__set_snooze_alarm(void) {
   alarm_set_snooze_alarm();
   cl_assert_equal_i(s_snooze_timer_timeout_ms, 10 * 1000);
   cl_assert_equal_i(s_num_alarm_events_put, 0);
