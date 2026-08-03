@@ -273,6 +273,24 @@ void test_recognizer__reset(void) {
   cl_assert_equal_b(cancelled, true);
 }
 
+void test_recognizer__reset_preserves_is_owned(void) {
+  RecognizerList list = {NULL};
+  NEW_RECOGNIZER(r) = test_recognizer_create(&s_test_impl_data, NULL);
+
+  recognizer_add_to_list(r, &list);
+  cl_assert(recognizer_is_owned(r));
+  cl_assert(list_contains(list.node, &r->node));
+
+  recognizer_reset(r);
+
+  // is_owned is list-membership state and must survive a reset
+  cl_assert(recognizer_is_owned(r));
+  cl_assert_equal_i(recognizer_get_state(r), RecognizerState_Possible);
+  cl_assert(list_contains(list.node, &r->node));
+
+  recognizer_remove_from_list(r, &list);  // disown so cleanup frees
+}
+
 void test_recognizer__cancel(void) {
   bool cancelled = false;
   s_test_impl_data.cancelled = &cancelled;

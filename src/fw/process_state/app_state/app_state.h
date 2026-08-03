@@ -29,6 +29,7 @@
 #include "applib/ui/click_internal.h"
 #include "applib/ui/content_indicator_private.h"
 #include "applib/ui/recognizer/recognizer.h"
+#include "applib/ui/recognizer/recognizer_manager.h"
 #include "applib/ui/speaker.h"
 #include "applib/ui/window_stack_private.h"
 #include "applib/unobstructed_area_service_private.h"
@@ -132,6 +133,13 @@ ContentIndicatorsBuffer *app_state_get_content_indicators_buffer(void);
 HealthServiceState *app_state_get_health_service_state(void);
 
 RecognizerList *app_state_get_recognizer_list(void);
+
+RecognizerManager *app_state_get_recognizer_manager(void);
+
+//! Track how many recognizers the app task has attached (no-op on other tasks)
+void app_state_recognizer_attach_count_inc(void);
+void app_state_recognizer_attach_count_dec(void);
+uint16_t app_state_recognizer_attach_count(void);
 
 JsRuntimeContext *app_state_get_js_runtime_context(void);
 

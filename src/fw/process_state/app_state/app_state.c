@@ -12,13 +12,16 @@
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/layer.h"
 #include "applib/ui/recognizer/recognizer_list.h"
+#include "applib/ui/recognizer/recognizer_manager.h"
 #include "applib/unobstructed_area_service.h"
+#include "kernel/pebble_tasks.h"
 #include "kernel/util/segment.h"
 #include "process_management/process_loader.h"
 #include "process_management/process_manager.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/persist.h"
 #include "syscall/syscall_internal.h"
+#include "system/logging.h"
 #include "system/passert.h"
 #include "pbl/util/attributes.h"
 #include "tinymt32.h"
@@ -103,6 +106,8 @@ typedef struct {
 
 #ifdef CONFIG_TOUCH
   RecognizerList recognizer_list;
+  RecognizerManager recognizer_manager;
+  uint16_t recognizer_attach_count;
 #endif
 
   uint8_t *js_runtime_context_buffer;
@@ -209,6 +214,11 @@ NOINLINE void app_state_init(void) {
   tick_timer_service_state_init(app_state_get_tick_timer_service_state());
 
   touch_service_state_init(app_state_get_touch_service_state());
+
+#ifdef CONFIG_TOUCH
+  recognizer_list_init(&s_app_state_ptr->recognizer_list);
+  recognizer_manager_init(&s_app_state_ptr->recognizer_manager);
+#endif
 
   health_service_state_init(app_state_get_health_service_state());
 
@@ -405,6 +415,33 @@ GBitmap* app_state_legacy2_get_2bit_framebuffer(void) {
 #ifdef CONFIG_TOUCH
 RecognizerList *app_state_get_recognizer_list(void) {
   return &s_app_state_ptr->recognizer_list;
+}
+
+RecognizerManager *app_state_get_recognizer_manager(void) {
+  return &s_app_state_ptr->recognizer_manager;
+}
+
+// The attach counter is per-APP-task: KernelMain modal attaches must not perturb it
+void app_state_recognizer_attach_count_inc(void) {
+  if (pebble_task_get_current() != PebbleTask_App) {
+    return;
+  }
+  s_app_state_ptr->recognizer_attach_count++;
+}
+
+void app_state_recognizer_attach_count_dec(void) {
+  if (pebble_task_get_current() != PebbleTask_App) {
+    return;
+  }
+  if (s_app_state_ptr->recognizer_attach_count == 0) {
+    PBL_LOG_WRN("recognizer attach count underflow");
+    return;
+  }
+  s_app_state_ptr->recognizer_attach_count--;
+}
+
+uint16_t app_state_recognizer_attach_count(void) {
+  return s_app_state_ptr->recognizer_attach_count;
 }
 #endif
 

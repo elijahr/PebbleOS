@@ -47,15 +47,62 @@ void window_schedule_render(struct Window *window) {
 
 void recognizer_destroy(Recognizer *recognizer) {}
 
-void recognizer_add_to_list(Recognizer *recognizer, RecognizerList *list) {}
+// Minimal functional list stubs so layer_deinit exercises its detach-and-destroy iteration.
+// These diverge from the real recognizer list on purpose; do not "fix" them and do not
+// write tests that rely on the extra permissiveness:
+// - recognizer_list_iterate snapshots the whole list up front, while the real one only
+//   captures each node's next pointer before its callback: a callback that removes a
+//   not-yet-visited entry passes here but would touch a stale node in real firmware
+// - the list argument is ignored; one global array backs every list
+// - recognizer_add_to_list has no is_owned guard against double-add
+// - recognizer_remove_from_list removes by swap-with-last, reordering the remaining
+//   entries, while the real list_remove unlinks in place and preserves order
+// (the array also caps at MAX_TEST_RECOGNIZERS entries -- a harness limit, not a
+// semantic divergence)
+#define MAX_TEST_RECOGNIZERS 4
+static Recognizer *s_attached_recognizers[MAX_TEST_RECOGNIZERS];
+static int s_num_attached_recognizers;
 
-void recognizer_remove_from_list(Recognizer *recognizer, RecognizerList *list) {}
+void recognizer_add_to_list(Recognizer *recognizer, RecognizerList *list) {
+  cl_assert(s_num_attached_recognizers < MAX_TEST_RECOGNIZERS);
+  s_attached_recognizers[s_num_attached_recognizers++] = recognizer;
+}
+
+void recognizer_remove_from_list(Recognizer *recognizer, RecognizerList *list) {
+  for (int i = 0; i < s_num_attached_recognizers; ++i) {
+    if (s_attached_recognizers[i] == recognizer) {
+      s_attached_recognizers[i] = s_attached_recognizers[--s_num_attached_recognizers];
+      return;
+    }
+  }
+}
+
+// Ownership is modeled as membership in the global array above
+bool recognizer_is_owned(Recognizer *recognizer) {
+  for (int i = 0; i < s_num_attached_recognizers; ++i) {
+    if (s_attached_recognizers[i] == recognizer) {
+      return true;
+    }
+  }
+  return false;
+}
 
 RecognizerManager *window_get_recognizer_manager(Window *window) { return NULL; }
 
 bool recognizer_list_iterate(RecognizerList *list, RecognizerListIteratorCb iter_cb,
                              void *context) {
-  return false;
+  // Iterate a snapshot: the callback may remove entries mid-iteration
+  Recognizer *snapshot[MAX_TEST_RECOGNIZERS];
+  const int num = s_num_attached_recognizers;
+  for (int i = 0; i < num; ++i) {
+    snapshot[i] = s_attached_recognizers[i];
+  }
+  for (int i = 0; i < num; ++i) {
+    if (!iter_cb(snapshot[i], context)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void recognizer_manager_register_recognizer(RecognizerManager *manager, Recognizer *recognizer) {}
@@ -417,4 +464,29 @@ void test_layer__find_layer_contains_point_override_layer_contains_point(void) {
 
   // outside the bounds of child a, so child b is not found
   cl_assert_equal_p(layer_find_layer_containing_point(&parent, &GPoint(15, 15)), &parent);
+}
+
+void test_layer__recognizer_attach_count(void) {
+  s_stub_app_state_recognizer_attach_count = 0;
+  s_num_attached_recognizers = 0;
+  int dummy;
+  Recognizer *r = (Recognizer *)&dummy;
+  Layer layer;
+  layer_init(&layer, &GRectZero);
+
+  // Attach increments the per-app attach counter
+  layer_attach_recognizer(&layer, r);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 1);
+
+  // Detach decrements it back to zero
+  layer_detach_recognizer(&layer, r);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 0);
+
+  // layer_deinit routes destruction through layer_detach_recognizer: exactly ONE
+  // decrement (a second decrement in deinit would wrap the uint16_t stub to 65535)
+  layer_attach_recognizer(&layer, r);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 1);
+  layer_deinit(&layer);
+  cl_assert_equal_i(app_state_recognizer_attach_count(), 0);
+  cl_assert_equal_i(s_num_attached_recognizers, 0);
 }
