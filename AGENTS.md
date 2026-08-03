@@ -143,6 +143,21 @@ there. Only a custom flashloader driving SPIM2 from RAM can ever read or
 write that part, and it does not exist yet. Plan flashing decisions on the
 assumption that everything on external NOR is unrecoverable if lost.
 
+The touch controller has the same property, for a different reason, and it
+is easy to miss because the instinct is to take a backup first. **There is
+no backup to take.** The CST816 bootloader exposes no read-back: the only
+boot-mode reads are `0xA003` (boot ack), `0xA005` (page status) and
+`0xA008` (a 16-bit checksum over the whole programmed region). Hynitron's
+own reference driver verifies programming by checksum, which is the design
+you choose when readback is unavailable. No copy of this panel's stock
+firmware has been found anywhere public. So a reflash of the CST816 is
+irreversible at the moment it is authorised, not at the moment somebody
+notices — and the stock image's only protection is that nobody reflashes
+it. `0xA7` (chip ID) and `0xA9` (firmware version) are readable in work
+mode and are already logged on every boot by `touch_sensor_init`; the
+project ID, which is the field that would identify the module variant, has
+no known readback at all.
+
 On PRF specifically: its absence is recorded in `boards/bangle2/Kconfig`
 (`config PRF_UNAVAILABLE`) — the blocker is the missing bootloader (nothing
 selects PRF vs normal firmware at reset; "a PRF reset lands in the same image
