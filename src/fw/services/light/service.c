@@ -4,12 +4,12 @@
 #include "pbl/services/light.h"
 
 #include "board/board.h"
-#include "drivers/ambient_light.h"
-#include "drivers/backlight.h"
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/backlight.h>
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
-#include "drivers/backlight.h"
+#include <pbl/drivers/backlight.h>
 #endif
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "kernel/low_power.h"
 #include "pbl/services/analytics/analytics.h"
@@ -18,7 +18,7 @@
 #include "pbl/util/math.h"
 #include "services/light/als_screen_compensation.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "pbl/os/mutex.h"
 #include "system/passert.h"
 

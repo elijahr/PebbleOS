@@ -29,9 +29,9 @@
 
 #include "board/board.h"
 #include "drivers/flash/bangle2_flash_ids.h"
-#include "drivers/flash/flash_impl.h"
-#include "drivers/flash/qspi_flash.h"
-#include "drivers/flash/qspi_flash_part_definitions.h"
+#include <pbl/drivers/flash/flash_impl.h>
+#include <pbl/drivers/flash/qspi_flash.h>
+#include <pbl/drivers/flash/qspi_flash_part_definitions.h>
 #include "flash_region/flash_region.h"
 #include "system/logging.h"
 #include "system/passert.h"

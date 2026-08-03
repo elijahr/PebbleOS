@@ -10,10 +10,10 @@
 //! SOFTWARE (bit-bang) I2C bus — it does NOT compute heart rate and never calls
 //! hrm_manager_new_data_cb().
 
-#include "drivers/hrm.h"
+#include <pbl/drivers/hrm.h>
 #include "drivers/hrm/vc31.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
 #include "system/logging.h"
 
 #include <stdint.h>

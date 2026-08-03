@@ -2,19 +2,19 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "board/board.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
-#include "drivers/i2c/definitions.h"
-#include "drivers/i2c/nrf5.h"
-#include "drivers/hrm.h"
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/i2c/definitions.h>
+#include <pbl/drivers/i2c/nrf5.h>
+#include <pbl/drivers/hrm.h>
 #include "drivers/hrm/vc31.h"
 #include "drivers/imu/kx023/kx023.h"
-#include "drivers/mag.h"
-#include "drivers/pressure.h"
-#include "drivers/pwm.h"
-#include "drivers/rtc.h"
-#include "drivers/touch/cst816/touch_sensor_definitions.h"
-#include "drivers/uart/nrf5.h"
+#include <pbl/drivers/mag.h>
+#include <pbl/drivers/pressure.h>
+#include <pbl/drivers/pwm.h>
+#include <pbl/drivers/rtc.h>
+#include <pbl/drivers/touch/cst816/touch_sensor_definitions.h>
+#include <pbl/drivers/uart/nrf5.h>
 #include "system/logging.h"
 #include "system/passert.h"
 

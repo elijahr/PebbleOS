@@ -35,8 +35,8 @@
 
 #include "board/board.h"
 #include "drivers/flash/bangle2_flash_ids.h"
-#include "drivers/flash/flash_impl.h"
-#include "drivers/gpio.h"
+#include <pbl/drivers/flash/flash_impl.h>
+#include <pbl/drivers/gpio.h>
 #include "flash_region/flash_region.h"
 #include "kernel/util/delay.h"
 #include "system/logging.h"

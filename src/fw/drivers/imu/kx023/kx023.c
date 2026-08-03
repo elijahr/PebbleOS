@@ -13,9 +13,9 @@
 // minus the FIFO/INT machinery.
 
 #include "board/board.h"
-#include "drivers/accel.h"
-#include "drivers/i2c.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/accel.h>
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/rtc.h>
 #include "kernel/util/sleep.h"
 #include "pbl/services/imu/units.h"
 #include "pbl/services/new_timer/new_timer.h"

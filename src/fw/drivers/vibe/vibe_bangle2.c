@@ -9,8 +9,8 @@
 
 #include "board/board.h"
 #include "console/prompt.h"
-#include "drivers/gpio.h"
-#include "drivers/vibe.h"
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/vibe.h>
 
 static bool s_enabled;
 

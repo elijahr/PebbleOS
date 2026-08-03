@@ -9,8 +9,8 @@
 // corresponds to 4200 mV, so millivolts = raw * 4200 / 1288. Percentage is
 // derived downstream by the voltage battery service via the discharge curve.
 
-#include "drivers/battery.h"
-#include "drivers/gpio.h"
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/gpio.h>
 
 #include "board/board.h"
 #include "system/logging.h"

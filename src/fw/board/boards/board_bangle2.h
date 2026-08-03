@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "drivers/backlight/pwm.h"
+#include <pbl/drivers/backlight/pwm.h>
 #include "drivers/imu/kx023/kx023.h"
-#include "drivers/touch/cst816/touch_sensor_definitions.h"
+#include <pbl/drivers/touch/cst816/touch_sensor_definitions.h>
 
 extern const TouchSensor *CST816;
 

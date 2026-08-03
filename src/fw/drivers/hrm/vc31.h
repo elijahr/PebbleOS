@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
 
 #include <stdbool.h>
 #include <stdint.h>

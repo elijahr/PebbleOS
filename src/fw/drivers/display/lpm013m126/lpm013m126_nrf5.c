@@ -24,11 +24,11 @@
 // continuously or a static DC bias physically damages the memory-LCD, so it is
 // driven fully in hardware (RTC + GPIOTE + PPI) and free-runs after display_init.
 
-#include "drivers/display/display.h"
+#include <pbl/drivers/display/display.h>
 
 #include "board/board.h"
 #include "board/display.h"
-#include "drivers/gpio.h"
+#include <pbl/drivers/gpio.h>
 #include "kernel/events.h"
 #include "system/logging.h"
 #include "system/passert.h"

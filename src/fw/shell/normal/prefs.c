@@ -13,8 +13,8 @@
 #include "apps/system/toggle/quiet_time.h"
 #include "board/board.h"
 #include "applib/graphics/gtypes.h"
-#include "drivers/ambient_light.h"
-#include "drivers/backlight.h"
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/backlight.h>
 #include "mfg/mfg_info.h"
 #include "pbl/os/mutex.h"
 #include "popups/timeline/peek.h"
@@ -22,7 +22,6 @@
 #include "process_management/process_manager.h"
 #include "pbl/services/accel_manager.h"
 #include "pbl/services/touch/touch.h"
-#include "pbl/services/powermode_service.h"
 #include "pbl/services/hrm/hrm_manager.h"
 #include "pbl/services/i18n/i18n.h"
 #include "resource/resource_ids.auto.h"
@@ -34,7 +33,7 @@
 #include "pbl/services/timeline/peek.h"
 #include "kernel/events.h"
 #include "kernel/event_loop.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/util/size.h"
 #include "pbl/util/uuid.h"
@@ -287,7 +286,6 @@ static uint16_t s_timeline_peek_before_time_m =
 static uint8_t s_timeline_peek_unsupported_face_mode = TimelinePeekUnsupportedFaceMode_None;
 #endif
 
-#define PREF_KEY_POWER_MODE "powerMode"
 #define PREF_KEY_COREDUMP_ON_REQUEST "coredumpOnRequest"
 #define PREF_KEY_ACCEL_SHAKE_LOG_INFO "accelShakeLogInfo"
 #define PREF_KEY_VIBE_LOG_INFO "vibeLogInfo"
@@ -297,7 +295,6 @@ static uint8_t s_timeline_peek_unsupported_face_mode = TimelinePeekUnsupportedFa
 #ifdef CONFIG_APP_SCALING
 #define PREF_KEY_LEGACY_APP_RENDER_MODE "legacyAppRenderMode"
 #endif
-static uint8_t s_power_mode = PowerMode_HighPerformance;
 static bool s_coredump_on_request_enabled = false;
 static bool s_accel_shake_log_info_enabled = false;
 static bool s_vibe_log_info_enabled = false;
@@ -743,15 +740,6 @@ static bool prv_set_s_timeline_peek_unsupported_face_mode(uint8_t *mode) {
 }
 #endif
 
-static bool prv_set_s_power_mode(uint8_t *mode) {
-  if (*mode >= PowerModeCount) {
-    return false;
-  }
-  s_power_mode = *mode;
-  powermode_service_set_enabled(*mode == PowerMode_LowPower);
-  return true;
-}
-
 static bool prv_set_s_coredump_on_request_enabled(bool *enabled) {
   s_coredump_on_request_enabled = *enabled;
   return true;
@@ -953,6 +941,21 @@ void shell_prefs_init(void) {
   prv_convert_deprecated_backlight_behaviour_key(&file);
 #ifdef CONFIG_DYNAMIC_BACKLIGHT
   prv_convert_deprecated_dynamic_intensity_key(&file);
+#endif
+
+#if !TIMELINE_PEEK_WATCHFACE_FIT_SUPPORTED
+  {
+    // Discard any watchface-fit pref synced from a watch model that supports it.
+    // Check both key forms: locally-written keys include the null terminator,
+    // phone-originated BlobDB writes may not.
+    static const char *const fit_key = "timelineQuickViewWatchfaceFit";
+    for (size_t key_len = strlen(fit_key); key_len <= strlen(fit_key) + 1; key_len++) {
+      if (settings_file_get_len(&file, fit_key, key_len) > 0) {
+        PBL_LOG_INFO("Discarding unsupported pref: %s", fit_key);
+        settings_file_delete(&file, fit_key, key_len);
+      }
+    }
+  }
 #endif
 
   // Init state for each pref from our backing store
@@ -2081,15 +2084,6 @@ void shell_prefs_set_menu_scroll_vibe_behavior(MenuScrollVibeBehavior behavior) 
   prv_pref_set(PREF_KEY_MENU_SCROLL_VIBE_BEHAVIOR, &behavior, sizeof(MenuScrollVibeBehavior));
 }
 
-PowerMode shell_prefs_get_power_mode(void) {
-  return (PowerMode)s_power_mode;
-}
-
-void shell_prefs_set_power_mode(PowerMode mode) {
-  uint8_t val = (uint8_t)mode;
-  prv_pref_set(PREF_KEY_POWER_MODE, &val, sizeof(val));
-}
-
 void pbl_analytics_external_collect_settings(void) {
   PBL_ANALYTICS_SET_UNSIGNED(settings_health_tracking_enabled,
                              activity_prefs_tracking_is_enabled());
@@ -2101,7 +2095,6 @@ void pbl_analytics_external_collect_settings(void) {
   PBL_ANALYTICS_SET_UNSIGNED(settings_health_hrm_activity_tracking_enabled,
                              activity_prefs_hrm_activity_tracking_is_enabled());
 #endif
-  PBL_ANALYTICS_SET_UNSIGNED(settings_power_mode, shell_prefs_get_power_mode());
   PBL_ANALYTICS_SET_UNSIGNED(settings_motion_sensitivity, shell_prefs_get_motion_sensitivity());
   PBL_ANALYTICS_SET_UNSIGNED(settings_backlight_intensity_pct, backlight_get_intensity());
   PBL_ANALYTICS_SET_UNSIGNED(settings_backlight_timeout_s, backlight_get_timeout_ms() / 1000);

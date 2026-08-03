@@ -15,8 +15,8 @@
 //! so no milligauss scaling is applied (unlike a datasheeted part). The sensor
 //! sits on a SOFTWARE (bit-bang) I2C bus reached through the standard i2c API.
 
-#include "drivers/i2c.h"
-#include "drivers/mag.h"
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/mag.h>
 #include "board/board.h"
 #include "pbl/os/mutex.h"
 #include "system/logging.h"

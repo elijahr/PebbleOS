@@ -87,9 +87,19 @@ Look things up: protocol specifications, podcasts, developer documents and more!
 development/getting_started.md
 development/options.md
 development/building_fw.md
+development/testing.md
 development/qemu.md
+development/debugging.md
 development/moddable.md
+development/sdk_export.md
+development/contributing.md
 development/pr-procedure.md
+```
+
+```{toctree}
+:hidden:
+:caption: 🏛️ Architecture
+architecture/index.md
 ```
 
 ```{toctree}

@@ -25,7 +25,7 @@
 //! the common.c wait-on-semaphore loop behaves the same as for the IRQ-driven
 //! TWIM HAL.
 
-#include "drivers/i2c.h"
+#include <pbl/drivers/i2c.h>
 #include "definitions.h"
 #include "nrf5.h"
 

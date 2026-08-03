@@ -49,12 +49,15 @@ elif bld.env.CONFIG_BOARD_BANGLE2:
     # Remaining stubbed driver slots. Track C replaced the battery and vibe
     # stubs with real drivers (see driver_bangle2_battery / driver_bangle2_vibe
     # below); ambient light is still stubbed.
+    # The shared accel stub was removed upstream as unreferenced; bangle2 always
+    # sets CONFIG_ACCEL_KX023, so a build without it now fails here rather than
+    # at link time.
+    if not bld.env.CONFIG_ACCEL_KX023:
+        bld.fatal('bangle2 requires CONFIG_ACCEL_KX023; the accel stub no longer exists')
+
     bangle2_stub_sources = [
         'stubs/ambient_light.c',
     ]
-    # Track B provides a real accelerometer driver; only stub it when none is set.
-    if not bld.env.CONFIG_ACCEL_KX023:
-        bangle2_stub_sources.append('stubs/accel.c')
 
     bld.objects(
         name='driver_bangle2_stubs',
@@ -411,9 +414,6 @@ if bld.env.CONFIG_SOC_SF32LB52:
             'hal_sifli',
         ],
     )
-
-if bld.env.CONFIG_CPUMODE:
-    bld.recurse('cpumode')
 
 bld(
     name='drivers',

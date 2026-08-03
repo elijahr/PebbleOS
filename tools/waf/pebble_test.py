@@ -339,6 +339,7 @@ def add_clar_test(
         "tests/test_includes",
         "tests",
         "include",
+        "subsys",
         "src/core",
         "src/fw",
         "src/boot",

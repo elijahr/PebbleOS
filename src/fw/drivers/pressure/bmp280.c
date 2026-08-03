@@ -12,8 +12,8 @@
 //! data @ 0xF7).
 
 #include "board/board.h"
-#include "drivers/pressure.h"
-#include "drivers/i2c.h"
+#include <pbl/drivers/pressure.h>
+#include <pbl/drivers/i2c.h>
 #include "system/logging.h"
 
 #include <stdint.h>

@@ -14,7 +14,7 @@
 #include "process_state/app_state/app_state.h"
 #include "process_management/pebble_process_md.h"
 #include "mfg/mfg_serials.h"
-#include "services/bluetooth/local_id.h"
+#include <pbl/services/bluetooth/local_id.h>
 #include "system/version.h"
 
 #include <stdio.h>
