@@ -17,6 +17,8 @@ static int s_num_timer_register_calls = 0;
 static int s_alarm_timer_timeout_ms = 0;
 static int s_snooze_timer_timeout_ms = 0;
 static int s_snooze_timer_id = 0;
+static NewTimerCallback s_snooze_timer_cb = NULL;
+static void *s_snooze_timer_cb_data = NULL;
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -45,7 +47,15 @@ bool new_timer_start(TimerID timer_id, uint32_t timeout_ms, NewTimerCallback cb,
                      uint32_t flags) {
   s_num_timer_register_calls++;
   s_snooze_timer_timeout_ms = timeout_ms;
+  s_snooze_timer_cb = cb;
+  s_snooze_timer_cb_data = cb_data;
   return true;
+}
+
+//! Fire the most recently started timer, as the real timer service would on expiry.
+static void prv_fire_snooze_timer(void) {
+  cl_assert(s_snooze_timer_cb != NULL);
+  s_snooze_timer_cb(s_snooze_timer_cb_data);
 }
 
 bool new_timer_stop(TimerID timer_id) {
@@ -68,6 +78,8 @@ void test_alarm__initialize(void) {
   s_num_alarm_events_put = 0;
   s_alarm_timer_timeout_ms = 0;
   s_snooze_timer_timeout_ms = 0;
+  s_snooze_timer_cb = NULL;
+  s_snooze_timer_cb_data = NULL;
   s_num_alarms_fired = 0;
 
   s_current_hour = 0;
@@ -379,9 +391,11 @@ void test_alarm__snooze_delay(void) {
 
 void test_alarm__set_snooze_alarm(void) {
   alarm_set_snooze_alarm();
-  cl_assert_equal_i(s_snooze_timer_timeout_ms, 10 * 1000);
+  // The default snooze delay is 10 *minutes* (DEFAULT_SNOOZE_DELAY_M).
+  cl_assert_equal_i(s_snooze_timer_timeout_ms, 10 * SECONDS_PER_MINUTE * MS_PER_SECOND);
   cl_assert_equal_i(s_num_alarm_events_put, 0);
   s_current_minute = 10;
+  prv_fire_snooze_timer();
   cl_assert_equal_i(s_num_alarm_events_put, 1);
 }
 
