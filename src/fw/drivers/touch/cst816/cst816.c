@@ -694,6 +694,18 @@ static bool prv_write_data(uint16_t register_address, const uint8_t *datum, uint
     addr_size = 2;
   }
   i2c_use(port);
+  // The staging buffer and the memcpy below are LOAD-BEARING, not convenience.
+  //
+  // bangle2's touch bus is hardware TWIM/EasyDMA: board_bangle2.c omits .type on
+  // s_i2c_touch_bus_hal, and I2CBusHalType_Twim == 0 in drivers/i2c/nrf5.h, so the
+  // bus defaults to TWIM. EasyDMA cannot read flash: nrfx_twim.c twim_xfer() returns
+  // NRFX_ERROR_INVALID_ADDR when !nrfx_is_in_ram(p_primary_buf), and
+  // drivers/i2c/nrf5.c PBL_ASSERTNs on rv == NRFX_SUCCESS. That is a boot-time panic
+  // on the recovery path, not a soft failure.
+  //
+  // app_bin now lives in .rodata (see the _Static_assert in cst816_fw_update), so
+  // firmware pages MUST be staged through this RAM buffer. Do not "optimize" this by
+  // passing datum straight to i2c_write_block().
   uint8_t data[size + sizeof(register_address)];
   data[0] = register_address >> 8;
   data[1] = register_address & 0xFF;
@@ -748,6 +760,31 @@ static uint16_t cst816_read_checksum(void)
 }
 
 static bool cst816_fw_update(void) {
+  // app_bin must stay const so the linker keeps it in .rodata. A non-const copy
+  // costs ~16 KB of kernel RAM, which bangle2 cannot spare.
+  //
+  // This is not hypothetical: the bangle2 branch of third_party/nonfree/wscript_build
+  // is documented there as TEMPORARY ("revert to the getafix blob once recovery is
+  // confirmed"). Flipping export_includes back would silently reintroduce the RAM
+  // cost. Nothing else in the build, the tests, or CI would notice. This assertion
+  // does.
+  //
+  // The guard is scoped to bangle2 because this file is shared by every
+  // CONFIG_TOUCH_CST816 board, and the getafix and obelix copies of cst816_fw.h are
+  // non-const today. Those copies live in the pebbleos-nonfree submodule, which this
+  // repository cannot change, so an unscoped assertion breaks their builds instead of
+  // protecting anything. Scoping costs nothing: the regression being guarded against
+  // is a bangle2 build pointed at the getafix blob, and such a build is still a
+  // bangle2 build, so the assertion still fires.
+  //
+  // Note _Generic, not __builtin_types_compatible_p: the latter ignores top-level
+  // qualifiers and compiles clean either way, so it is a tautology here. _Generic on
+  // &app_bin[0] selects on the pointee type, which does carry the const.
+#if defined(CONFIG_BOARD_BANGLE2)
+  _Static_assert(_Generic(&app_bin[0], const unsigned char *: 1, default: 0),
+                 "app_bin must be const so it stays in .rodata");
+#endif
+
   if (sizeof(app_bin) > 10) {
     uint16_t start_addr = (((uint16_t)(app_bin[1] & 0xFF)) << 8) | app_bin[0];
     uint16_t length = (((uint16_t)(app_bin[3] & 0xFF)) << 8) | app_bin[2];
