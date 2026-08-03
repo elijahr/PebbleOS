@@ -1,3 +1,15 @@
+/* SPDX-FileCopyrightText: Lierda Science & Technology Group Co., Ltd. */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* CST816D touch controller recovery firmware, used to reflash a controller
+ * whose firmware has been corrupted. Taken verbatim from
+ * github.com/lierda-iot/CAT1.bis_OpenCPU, at
+ * components/driver/tp/axs5106/cst816d/
+ *   V01_0x6a07_CSW_2511146_CST816D_HYN_COB_ZY_W01_W60_updata.h
+ * That repository is Apache-2.0; the file itself carries no copyright notice
+ * beyond a generated header naming the IC type, checksum and build date.
+ */
+
 static const unsigned char app_bin[] = {
     0x00, 0x00, 0x00, 0x3c, 0x07, 0x6a, 0x02, 0x2a, 0x7d, 0x12, 0x2c, 0x49, 0x12, 0x2d, 0x56, 0x22,
     0x32, 0x22, 0x02, 0x38, 0xe5, 0x02, 0x2e, 0x5c, 0x74, 0xb7, 0x2f, 0xf5, 0x82, 0xe4, 0x34, 0x02,
