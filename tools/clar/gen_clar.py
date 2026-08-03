@@ -15,12 +15,10 @@ def compress_file(filename):
 
     if sys.version_info >= (3, 0):
         bin = zlib.compress(bytes(contents, "utf-8"))
-        return (
-            ('"%s" : r"""' % filename) + base64.b64encode(bin).decode("utf-8") + '"""'
-        )
+        return base64.b64encode(bin).decode("utf-8")
     else:
         bin = zlib.compress(contents)
-        return ('"%s" : r"""' % filename) + base64.b64encode(bin) + '"""'
+        return base64.b64encode(bin)
 
 
 def decompress_file(content):
@@ -28,14 +26,18 @@ def decompress_file(content):
 
 
 def build_table(filenames):
-    table = "\n\nCLAR_FILES = {\n"
-    table += ",\n".join(compress_file(f) for f in filenames)
-    table += "\n}"
-    return table
+    # Emit the table exactly as `ruff format` would: four-space indent, no
+    # space before the colon, and a trailing comma on the last entry. The
+    # generated clar.py is committed and CI runs `ruff format --check` on it,
+    # so the generator has to produce formatted output by construction.
+    entries = "".join(
+        '    "%s": r"""%s""",\n' % (name, compress_file(name)) for name in filenames
+    )
+    return "\n\nCLAR_FILES = {\n" + entries + "}"
 
 
 CLAR_FOOTER = """
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
 """
 
