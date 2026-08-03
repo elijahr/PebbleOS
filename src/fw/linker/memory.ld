@@ -61,3 +61,11 @@ ASSERT(CONFIG_APP_RAM_4X_SEGMENT_SIZE % 8 == 0,
 /* Basic sanity checks: apps must fit, and the kernel needs at least 64k. */
 ASSERT(PBL_APP_RAM_SIZE > 0, "App RAM is too small!")
 ASSERT(PBL_KERNEL_RAM_SIZE >= 64K, "Kernel RAM is too small!")
+
+/* Full-flash bare-metal layout: the image must fit the internal flash.
+ * The stock bootloader/MBR-params/settings pages above 0xF7000 are dead
+ * bytes (unreachable), so the bound is the flash end, not 0xF7000. */
+#if defined(CONFIG_BOARD_BANGLE2)
+ASSERT(ORIGIN(FLASH) + LENGTH(FLASH) <= CONFIG_FLASH_BASE + CONFIG_FLASH_SIZE,
+       "bangle2 app image overruns the internal flash")
+#endif

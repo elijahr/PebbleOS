@@ -24,6 +24,8 @@ typedef struct {
 
 #ifdef CONFIG_BOARD_ASTERIX
 #include "displays/display_asterix.h"
+#elif defined(CONFIG_BOARD_BANGLE2)
+#include "displays/display_bangle2.h"
 #elif defined(CONFIG_BOARD_OBELIX_DVT) || defined(CONFIG_BOARD_OBELIX_PVT) || defined(CONFIG_BOARD_OBELIX_BB2)
 #include "displays/display_obelix.h"
 #elif defined(CONFIG_BOARD_GETAFIX_EVT) || defined(CONFIG_BOARD_GETAFIX_DVT) || defined(CONFIG_BOARD_GETAFIX_DVT2)

@@ -396,11 +396,25 @@ void qspi_flash_init(QSPIFlash *dev, QSPIFlashPart *part, bool coredump_mode) {
 
 bool qspi_flash_check_whoami(QSPIFlash *dev) {
   QSPIFlashPart *part = dev->state->part;
-  uint32_t val;
+  // RDID delivers only 3 bytes into this 4-byte word; zero-init so the unwritten
+  // MSB does not leave garbage that makes the == qspi_id_value compare flake.
+  uint32_t val = 0;
 
   prv_cinstr_read(dev, part->instructions.qspi_id, &val, 3U);
 
   return val == part->qspi_id_value;
+}
+
+bool qspi_flash_read_id(QSPIFlash *dev, uint32_t *id) {
+  QSPIFlashPart *part = dev->state->part;
+  // RDID delivers only 3 bytes into this 4-byte word; zero-init so the
+  // unwritten MSB cannot leave garbage in the packed id.
+  uint32_t val = 0;
+
+  prv_cinstr_read(dev, part->instructions.qspi_id, &val, 3U);
+
+  *id = val;
+  return true;
 }
 
 bool qspi_flash_is_in_coredump_mode(QSPIFlash *dev) {

@@ -41,26 +41,53 @@ static void prv_twim_init(I2CBus *bus) {
   PBL_ASSERTN(err == NRFX_SUCCESS);
 }
 
+// The nRF HAL fans every i2c_hal_* entry point out to either the hardware TWIM
+// path below or the software bit-bang path (bitbang.c), selected per-bus by
+// bus->hal->type. This lets one board declare some buses hardware-TWIM and
+// others software-bitbang while the common driver (common.c) stays HAL-agnostic.
+static bool prv_is_bitbang(I2CBus *bus) {
+  return bus->hal->type == I2CBusHalType_BitBang;
+}
+
 void i2c_hal_init(I2CBus *bus) {
-  prv_twim_init(bus); 
+  if (prv_is_bitbang(bus)) {
+    i2c_bitbang_hal_init(bus);
+    return;
+  }
+  prv_twim_init(bus);
   nrfx_twim_uninit(&bus->hal->twim);
 }
 
 void i2c_hal_enable(I2CBus *bus) {
-  prv_twim_init(bus); 
+  if (prv_is_bitbang(bus)) {
+    i2c_bitbang_hal_enable(bus);
+    return;
+  }
+  prv_twim_init(bus);
   nrfx_twim_enable(&bus->hal->twim);
 }
 
 void i2c_hal_disable(I2CBus *bus) {
+  if (prv_is_bitbang(bus)) {
+    i2c_bitbang_hal_disable(bus);
+    return;
+  }
   nrfx_twim_disable(&bus->hal->twim);
   nrfx_twim_uninit(&bus->hal->twim);
 }
 
 bool i2c_hal_is_busy(I2CBus *bus) {
+  if (prv_is_bitbang(bus)) {
+    return i2c_bitbang_hal_is_busy(bus);
+  }
   return nrfx_twim_is_busy(&bus->hal->twim);
 }
 
 void i2c_hal_abort_transfer(I2CBus *bus) {
+  if (prv_is_bitbang(bus)) {
+    i2c_bitbang_hal_abort_transfer(bus);
+    return;
+  }
   nrfx_twim_disable(&bus->hal->twim);
   nrfx_twim_enable(&bus->hal->twim);
 }
@@ -69,6 +96,10 @@ void i2c_hal_init_transfer(I2CBus *bus) {
 }
 
 void i2c_hal_start_transfer(I2CBus *bus) {
+  if (prv_is_bitbang(bus)) {
+    i2c_bitbang_hal_start_transfer(bus);
+    return;
+  }
   nrfx_twim_xfer_desc_t desc;
   I2CTransfer *transfer = &bus->state->transfer;
 

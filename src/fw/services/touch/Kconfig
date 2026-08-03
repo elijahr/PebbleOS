@@ -9,6 +9,18 @@ config SERVICE_TOUCH
 
 if SERVICE_TOUCH
 
+config TOUCH_NAV_BUTTONS
+    bool "Synthesize navigation buttons from touch gestures"
+    default n
+    help
+      Translate touchscreen gestures into synthetic Pebble button events so the
+      button-driven UI can be navigated by touch on devices with fewer than the
+      four buttons PebbleOS assumes: swipe up/down -> UP/DOWN (scroll menus),
+      tap -> SELECT (activate). The synthetic events are injected into the normal
+      kernel button pipeline, so the launcher, menus and watchface all respond
+      without any app-level changes. Intended for boards with a touchscreen but
+      a reduced button count (e.g. Bangle.js 2).
+
 module = SERVICE_TOUCH
 module-str = Touch
 source "subsys/logging/Kconfig.template.log_level"

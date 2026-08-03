@@ -6,6 +6,8 @@ use = ['fw_includes']
 
 if bld.env.CONFIG_PRESSURE_BMP390:
     sources.append('bmp390.c')
+elif bld.env.CONFIG_PRESSURE_BMP280:
+    sources.append('bmp280.c')
 
 bld.objects(
     name='driver_pressure',

@@ -16,6 +16,19 @@ typedef enum TouchState {
 typedef enum TouchGesture {
   TouchGesture_Tap,
   TouchGesture_DoubleTap,
+  //! Vertical swipes. The CST816 reports these natively; they are used by the
+  //! touch-to-button navigation shim (CONFIG_TOUCH_NAV_BUTTONS) to scroll
+  //! button-driven menus on devices with a touchscreen but no UP/DOWN buttons.
+  TouchGesture_SwipeUp,
+  TouchGesture_SwipeDown,
+  //! Horizontal swipe. The CST816 reports it natively; the touch-to-button
+  //! navigation shim (CONFIG_TOUCH_NAV_BUTTONS) maps swipe-right to the BACK
+  //! button so drilled-in menus can be backed out of on devices with a
+  //! touchscreen but no BACK button.
+  TouchGesture_SwipeRight,
+  //! Horizontal swipe. Decoded by the driver but intentionally not wired to
+  //! any button by the touch-to-button navigation shim.
+  TouchGesture_SwipeLeft,
 } TouchGesture;
 
 void touch_init(void);

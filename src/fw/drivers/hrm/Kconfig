@@ -13,6 +13,13 @@ config HRM_GH3X2X
     help
       Support for the Goodix GH3X2X heart rate sensor.
 
+config HRM_VC31
+    bool "Vcare VC31/VC31B"
+    help
+      Interface-only support for the Vcare VC31/VC31B optical heart-rate sensor.
+      Powers the part and reads raw registers; the PPG->BPM algorithm is a
+      proprietary blob and is not implemented.
+
 config HRM_STUB
     bool "Stub"
     help

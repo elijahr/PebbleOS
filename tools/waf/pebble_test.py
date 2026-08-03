@@ -8,6 +8,7 @@ from string import Template
 import hashlib
 import os
 import re
+import sys
 import unicodedata as ud
 
 
@@ -306,10 +307,20 @@ def add_clar_test(
         test_src_file = task.inputs[0].abspath()
         test_bld_dir = task.outputs[0].get_bld().parent.abspath()
 
-        cmd = "python {0}/clar.py --file={1} --clar-path={0} {2}".format(
-            clar_dir, test_src_file, test_bld_dir
-        )
-        task.generator.bld.exec_command(cmd)
+        cmd = [
+            sys.executable,
+            os.path.join(clar_dir, "clar.py"),
+            "--file=" + test_src_file,
+            "--clar-path=" + clar_dir,
+            test_bld_dir,
+        ]
+        result = bld.exec_command(cmd)
+        if result != 0:
+            raise Errors.WafError(
+                "clar harness generation failed (exit {}) for {}".format(
+                    result, test_src_file
+                )
+            )
 
     clar_harness = test_dir.make_node("clar_main.c")
 

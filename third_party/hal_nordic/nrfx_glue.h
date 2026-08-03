@@ -322,8 +322,11 @@ void vPortExitCritical(void);
 /** @brief Bitmask that defines DPPI groups that are reserved for use outside of the nrfx library. */
 #define NRFX_DPPI_GROUPS_USED     0
 
+/* NimBLE's controller hardcodes PPI CH4-7, so the nrfx dynamic allocator must
+ * not hand them out. Unconditional (stub and NimBLE builds) so PPI allocation
+ * stays identical between emulator and silicon. */
 /** @brief Bitmask that defines PPI channels that are reserved for use outside of the nrfx library. */
-#define NRFX_PPI_CHANNELS_USED    0
+#define NRFX_PPI_CHANNELS_USED    ((1U << 4) | (1U << 5) | (1U << 6) | (1U << 7))
 
 /** @brief Bitmask that defines PPI groups that are reserved for use outside of the nrfx library. */
 #define NRFX_PPI_GROUPS_USED      0

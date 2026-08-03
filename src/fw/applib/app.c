@@ -115,6 +115,15 @@ static void prv_app_button_down_handler(PebbleEvent *e, void *context) {
 
   click_recognizer_handle_button_down(
       &app_state_get_click_manager()->recognizers[e->button.button_id]);
+#if CONFIG_TOUCH_NAV_BUTTONS
+  if (e->button.is_synthetic_click) {
+    // Atomic discrete click: press+release in the same synchronous call, so
+    // is_button_down goes true->false with no queue boundary in between and
+    // the hold-to-repeat timer is armed and cancelled before it can fire.
+    click_recognizer_handle_button_up(
+        &app_state_get_click_manager()->recognizers[e->button.button_id]);
+  }
+#endif
 }
 
 static void prv_app_button_up_handler(PebbleEvent *e, void *context) {

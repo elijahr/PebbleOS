@@ -33,6 +33,69 @@ elif bld.env.CONFIG_BOARD_ASTERIX:
         'driver_task_watchdog',
     ])
 
+elif bld.env.CONFIG_BOARD_BANGLE2:
+    bld.env.DRIVERS.extend([
+        'driver_button',
+        'driver_mcu',
+        'driver_mpu',
+        'driver_nrf5_hfxo',
+        'driver_otp',
+        'driver_task_watchdog',
+        'driver_bangle2_stubs',
+        'driver_bangle2_battery',
+        'driver_bangle2_vibe',
+    ])
+
+    # Remaining stubbed driver slots. Track C replaced the battery and vibe
+    # stubs with real drivers (see driver_bangle2_battery / driver_bangle2_vibe
+    # below); ambient light is still stubbed.
+    # The shared accel stub was removed upstream as unreferenced; bangle2 always
+    # sets CONFIG_ACCEL_KX023, so a build without it now fails here rather than
+    # at link time.
+    if not bld.env.CONFIG_ACCEL_KX023:
+        bld.fatal('bangle2 requires CONFIG_ACCEL_KX023; the accel stub no longer exists')
+
+    bangle2_stub_sources = [
+        'stubs/ambient_light.c',
+    ]
+
+    bld.objects(
+        name='driver_bangle2_stubs',
+        source=bangle2_stub_sources,
+        use=[
+            'fw_includes',
+            'pbl_includes',
+        ],
+    )
+
+    # Track C: real direct-SAADC battery driver (AIN1 / P0.03 sense, P0.23
+    # charge detect) plus the shared battery_common force-charge shim. Needs the
+    # Nordic HAL for the SAADC/GPIO register access.
+    bld.objects(
+        name='driver_bangle2_battery',
+        source=[
+            'battery/battery_bangle2.c',
+            'battery/battery_common.c',
+        ],
+        use=[
+            'fw_includes',
+            'pbl_includes',
+            'hal_nordic',
+        ],
+    )
+
+    # Track C: GPIO vibration motor on P0.19.
+    bld.objects(
+        name='driver_bangle2_vibe',
+        source=[
+            'vibe/vibe_bangle2.c',
+        ],
+        use=[
+            'fw_includes',
+            'pbl_includes',
+        ],
+    )
+
 elif bld.env.CONFIG_BOARD_OBELIX:
     bld.env.DRIVERS.extend([
         'driver_button',
@@ -235,7 +298,10 @@ if bld.env.CONFIG_QEMU:
 if bld.env.CONFIG_PWM:
     bld.recurse('pwm')
 
-if bld.env.CONFIG_SOC_NRF52:
+# The nrf5 QSPI backend references the board's QSPI_FLASH device; boards that
+# drive their flash over SPIM (CONFIG_FLASH_SPI_NOR) provide no such device, so
+# skip building it there.
+if bld.env.CONFIG_SOC_NRF52 and not bld.env.CONFIG_FLASH_SPI_NOR:
     bld.objects(
         name='driver_qspi',
         source=[
