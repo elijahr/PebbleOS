@@ -231,22 +231,26 @@ void test_calendar__future_event_added_and_removed(void) {
   timeline_event_init();
   cl_assert_equal_i(fake_event_get_count(), 1);
   cl_assert(!prv_get_calendar_ongoing());
-  TimerID timer_id = stub_new_timer_get_next();
-  cl_assert_equal_i(timer_id, TIMER_INVALID_ID);
-  cl_assert(!stub_new_timer_is_scheduled(timer_id));
+  cl_assert_equal_i(stub_new_timer_get_next(), TIMER_INVALID_ID);
 
   cl_assert(timeline_add(&item1));
   timeline_event_handle_blobdb_event();
   cl_assert_equal_i(fake_event_get_count(), 2);
   cl_assert(!prv_get_calendar_ongoing());
+  TimerID timer_id = stub_new_timer_get_next();
+  cl_assert(timer_id != TIMER_INVALID_ID);
   cl_assert(stub_new_timer_is_scheduled(timer_id));
   cl_assert_equal_i(10*60, stub_new_timer_timeout(timer_id) / 1000);
 
-  cl_assert(timeline_remove(&item1.header.id));
+  // timeline_remove() routes through blob_db_delete(), which is stubbed out in this
+  // test, so it would leave the pin in pin_db. Delete from pin_db directly, which is
+  // the real code path behind the BlobDB delete.
+  cl_assert_equal_i(pin_db_delete((uint8_t *)&item1.header.id, UUID_SIZE), S_SUCCESS);
   timeline_event_handle_blobdb_event();
   cl_assert_equal_i(fake_event_get_count(), 3);
   cl_assert(!prv_get_calendar_ongoing());
   cl_assert(!stub_new_timer_is_scheduled(timer_id));
+  cl_assert_equal_i(stub_new_timer_get_next(), TIMER_INVALID_ID);
 }
 
 void test_calendar__init_with_ongoing_event(void) {
@@ -268,22 +272,26 @@ void test_calendar__ongoing_event_added_and_removed(void) {
   timeline_event_init();
   cl_assert_equal_i(fake_event_get_count(), 1);
   cl_assert(!prv_get_calendar_ongoing());
-  TimerID timer_id = stub_new_timer_get_next();
-  cl_assert_equal_i(timer_id, TIMER_INVALID_ID);
-  cl_assert(!stub_new_timer_is_scheduled(timer_id));
+  cl_assert_equal_i(stub_new_timer_get_next(), TIMER_INVALID_ID);
 
   cl_assert(timeline_add(&item1));
   timeline_event_handle_blobdb_event();
   cl_assert_equal_i(fake_event_get_count(), 2);
   cl_assert(prv_get_calendar_ongoing());
+  TimerID timer_id = stub_new_timer_get_next();
+  cl_assert(timer_id != TIMER_INVALID_ID);
   cl_assert(stub_new_timer_is_scheduled(timer_id));
   cl_assert_equal_i(5*60, stub_new_timer_timeout(timer_id) / 1000);
 
-  cl_assert(timeline_remove(&item1.header.id));
+  // timeline_remove() routes through blob_db_delete(), which is stubbed out in this
+  // test, so it would leave the pin in pin_db. Delete from pin_db directly, which is
+  // the real code path behind the BlobDB delete.
+  cl_assert_equal_i(pin_db_delete((uint8_t *)&item1.header.id, UUID_SIZE), S_SUCCESS);
   timeline_event_handle_blobdb_event();
   cl_assert_equal_i(fake_event_get_count(), 3);
   cl_assert(!prv_get_calendar_ongoing());
   cl_assert(!stub_new_timer_is_scheduled(timer_id));
+  cl_assert_equal_i(stub_new_timer_get_next(), TIMER_INVALID_ID);
 }
 
 void test_calendar__init_with_past_event(void) {
@@ -304,21 +312,24 @@ void test_calendar__past_event_added_and_removed(void) {
   timeline_event_init();
   cl_assert_equal_i(fake_event_get_count(), 1);
   cl_assert(!prv_get_calendar_ongoing());
-  TimerID timer_id = stub_new_timer_get_next();
-  cl_assert_equal_i(timer_id, TIMER_INVALID_ID);
-  cl_assert(!stub_new_timer_is_scheduled(timer_id));
+  cl_assert_equal_i(stub_new_timer_get_next(), TIMER_INVALID_ID);
 
+  // item1 ends at 20*60, so at 30*60 it is wholly in the past: adding it must
+  // leave the running timer list empty.
   cl_assert(timeline_add(&item1));
   timeline_event_handle_blobdb_event();
   cl_assert_equal_i(fake_event_get_count(), 2);
   cl_assert(!prv_get_calendar_ongoing());
-  cl_assert(!stub_new_timer_is_scheduled(timer_id));
+  cl_assert_equal_i(stub_new_timer_get_next(), TIMER_INVALID_ID);
 
-  cl_assert(timeline_remove(&item1.header.id));
+  // timeline_remove() routes through blob_db_delete(), which is stubbed out in this
+  // test, so it would leave the pin in pin_db. Delete from pin_db directly, which is
+  // the real code path behind the BlobDB delete.
+  cl_assert_equal_i(pin_db_delete((uint8_t *)&item1.header.id, UUID_SIZE), S_SUCCESS);
   timeline_event_handle_blobdb_event();
   cl_assert_equal_i(fake_event_get_count(), 3);
   cl_assert(!prv_get_calendar_ongoing());
-  cl_assert(!stub_new_timer_is_scheduled(timer_id));
+  cl_assert_equal_i(stub_new_timer_get_next(), TIMER_INVALID_ID);
 }
 
 void test_calendar__timer_test(void) {
