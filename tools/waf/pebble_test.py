@@ -8,6 +8,7 @@ from string import Template
 import hashlib
 import os
 import re
+import subprocess
 import sys
 import unicodedata as ud
 
@@ -381,11 +382,13 @@ def add_clar_test(
             "--clar-path=" + clar_dir,
             test_bld_dir,
         ]
-        result = bld.exec_command(cmd)
-        if result != 0:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            # Surface clar.py's own diagnostics; without them the registration
+            # guard's message is invisible outside a verbose build.
             raise Errors.WafError(
-                "clar harness generation failed (exit {}) for {}".format(
-                    result, test_src_file
+                "clar harness generation failed (exit {}) for {}\n{}{}".format(
+                    proc.returncode, test_src_file, proc.stdout, proc.stderr
                 )
             )
 
