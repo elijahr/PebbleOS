@@ -12,3 +12,13 @@ clar(
     test_sources_ant_glob="test_boot_select.c",
     add_includes=["src/boot"],
 )
+
+# boot_image.h is the pure image-validation decision layer (geometry + CRC
+# gates) split out of boot_main's image_validate(). Header-only; crc32() is
+# linked from libutil by the clar harness.
+clar(
+    ctx,
+    sources_ant_glob=None,
+    test_sources_ant_glob="test_boot_image.c",
+    add_includes=["src/boot"],
+)

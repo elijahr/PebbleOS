@@ -22,6 +22,7 @@
 
 #include <nrfx.h>
 
+#include "boot_image.h"
 #include "boot_select.h"
 #include "pbl/util/crc32.h"
 
@@ -54,7 +55,8 @@ typedef struct __attribute__((packed)) {
   uint32_t checksum;  // crc32 over the image bytes after this header
 } FirmwareDescription;
 
-#define FW_DESCRIPTION_LENGTH 12u
+// FW_DESCRIPTION_LENGTH and the pure geometry/CRC validation decisions live in
+// boot_image.h (unit-tested off-target).
 
 // -----------------------------------------------------------------------------
 // Retained page helpers. The page holds the CRC of its own first 31 words in
@@ -202,10 +204,8 @@ static void nvmc_write(uint32_t dst, const uint8_t *src, uint32_t len) {
 static bool image_validate(uint32_t src_addr, uint32_t *out_payload_len, uint32_t *out_checksum) {
   FirmwareDescription desc;
   nor_read(src_addr, (uint8_t *)&desc, sizeof(desc));
-  if (desc.description_length != FW_DESCRIPTION_LENGTH) {
-    return false;
-  }
-  if (desc.firmware_length == 0 || desc.firmware_length > (FW_EXEC_END - FW_EXEC_BASE)) {
+  if (!boot_image_geometry_valid(desc.description_length, desc.firmware_length,
+                                 FW_EXEC_END - FW_EXEC_BASE)) {
     return false;
   }
   // CRC over the payload that follows the 12-byte header.
@@ -220,7 +220,7 @@ static bool image_validate(uint32_t src_addr, uint32_t *out_payload_len, uint32_
     addr += chunk;
     remaining -= chunk;
   }
-  if (crc != desc.checksum) {
+  if (!boot_image_checksum_valid(crc, desc.checksum)) {
     return false;
   }
   *out_payload_len = desc.firmware_length;
@@ -257,7 +257,7 @@ static void image_copy(uint32_t src_addr, uint32_t payload_len) {
 //! was stripped on copy), so validate the payload bytes directly.
 static bool internal_image_valid(uint32_t payload_len, uint32_t checksum) {
   uint32_t crc = crc32(0, (const uint8_t *)FW_EXEC_BASE, payload_len);
-  return crc == checksum;
+  return boot_image_checksum_valid(crc, checksum);
 }
 
 // -----------------------------------------------------------------------------
