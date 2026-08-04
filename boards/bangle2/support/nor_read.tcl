@@ -86,9 +86,12 @@
 #     halt                              ;# or: reset halt
 #     # ... save TX_BUF/RX_BUF contents here ...
 #     spim_setup
-#     echo [nor_rdid]                   ;# FIRST command to issue. R10 12.1.
-#     # if RDID is all-0x00 or all-0xFF the part may be in deep power-down,
-#     # not dead:  nor_wake ; echo [nor_rdid]
+#     nor_wake                          ;# wake (0xAB) UNCONDITIONALLY first
+#     echo [nor_rdid]                   ;# the first DIAGNOSTIC; settles the part
+#                                       ;#   ID. R10 12.1.
+#     # after an unconditional wake, an all-0x00/all-0xFF RDID has only one
+#     # meaning left: a dead bus, not deep power-down. Compare NUMERICALLY
+#     # (== 0x00 / == 0xFF) -- read_memory renders hex. See nor_wake.
 #     nor_assert_idle                   ;# WIP must be clear before trusting data
 #     set bytes [nor_read 0x000000 256]
 #     # ... restore TX_BUF/RX_BUF contents here ...
@@ -213,10 +216,11 @@ proc nor_read_max {} {
 # 0xAB, release from deep power-down. THE ONE NON-READ OPCODE IN THIS FILE.
 # It is non-mutating: it erases nothing, programs nothing, and touches no data.
 #
-# Call it ONLY when RDID has come back all-0x00 or all-0xFF. Those two answers
-# are what a part in deep power-down gives, and they are also what a genuinely
-# dead bus gives -- bangle2_flash_ids.h maps both to Bangle2FlashIdDeadBus and
-# cannot tell them apart. Without a wake you would read that as broken hardware
+# Call it FIRST, before RDID, every time. All-0x00 and all-0xFF are what a part
+# in deep power-down gives, and they are also what a genuinely dead bus gives --
+# bangle2_flash_ids.h maps both to Bangle2FlashIdDeadBus and cannot tell them
+# apart. Waking first COLLAPSES that ambiguity: whatever RDID then reports has
+# one cause, not two. Without a wake you would read all-0x00 as broken hardware
 # and stop, when the fix is one transaction and 10 microseconds of patience.
 #
 # NEVER called implicitly. nor_read and nor_rdid will not wake the part behind
@@ -245,7 +249,8 @@ proc nor_read_max {} {
 # that file and you have no copy of the system resource pack at all.
 proc nor_wake {} { spi_txn [list 0xAB] 0; sleep 2 }
 
-# RDID (0x9F). The FIRST command to issue: one transaction, and it settles
+# RDID (0x9F). The first DIAGNOSTIC to issue -- nor_wake goes before it, but a
+# wake is not a diagnostic. One transaction, and it SETTLES the part ID:
 # GD25Q64 (C8 40 17) vs XT25F64B (0B 40 17) on this unit. R10 12.1.
 proc nor_rdid {} {
     global RX_BUF
