@@ -70,6 +70,16 @@
 #   is silently truncated or misaligned -- the worst possible failure for the
 #   one artifact a restore would depend on.
 #
+#   WHAT IT CANNOT CATCH: RXD.AMOUNT VERIFIES COUNT, NOT DESTINATION. It says
+#   how many bytes EasyDMA wrote, never where it wrote them. Program a MAXCNT
+#   larger than the room between RX_BUF and whatever follows it and EasyDMA
+#   moves exactly that many bytes, straight through the end of RX_BUF and over
+#   TX_BUF or off the end of RAM. AMOUNT then equals MAXCNT and this check
+#   passes -- correctly, on its own terms. Overrun is bounded by nor_read_max,
+#   which is arithmetic done BEFORE the transaction, and by nothing after it.
+#   That is why every path that issues a bulk 0x03 must go through
+#   nor_read_raw / nor_bulk_chunk rather than calling spi_txn directly.
+#
 #   This assertion did NOT run on the 2026-08-01 bench session. The original
 #   nor_copytest.tcl never read RXD.AMOUNT, so nothing here is evidence about
 #   what this part reports. THE FIRST BENCH RUN IS ITS FIRST TEST. If it fires,
@@ -97,11 +107,23 @@
 #     # ... restore TX_BUF/RX_BUF contents here ...
 #
 #   For a BULK BACKUP do not call nor_read: building a 60k-element Tcl list per
-#   chunk is slow and wasteful. Issue the transaction, then let openocd move the
-#   bytes natively:
-#     spi_txn [concat [list 0x03] [ab $addr]] $NOR_CHUNK
-#     dump_image chunk_NNN.bin [expr {$RX_BUF+4}] $NOR_CHUNK
-#   and concatenate the chunks host-side. 8 MiB at NOR_CHUNK is 256 transactions.
+#   chunk is slow and wasteful. Use nor_read_raw, which runs the same bounds
+#   checks as nor_read and then leaves the bytes in RX_BUF for openocd to move
+#   natively, and size the chunk with nor_bulk_chunk:
+#     set chunk [nor_bulk_chunk]      ;# clamped to nor_read_max, power of two
+#     nor_read_raw $addr $chunk
+#     dump_image chunk_NNN.bin [expr {$RX_BUF+4}] $chunk
+#   and concatenate the chunks host-side. 8 MiB at the default chunk is 256
+#   transactions; a smaller clamped chunk means more of them, not a worse backup.
+#
+#   DO NOT hand-roll this as a bare `spi_txn [concat [list 0x03] [ab $addr]]
+#   $NOR_CHUNK`. That is what this recipe used to say, and it reaches spi_txn
+#   without passing nor_read_max, so it has NEITHER the length bound NOR the
+#   retained-page check -- on a moved RX_BUF (constraint 3 explicitly invites
+#   moving it) it overruns into TX_BUF and the RXD.AMOUNT check cannot see it,
+#   because that check counts bytes and does not know where they landed.
+#   nor_read_raw re-derives the cap on every call, so the recipe stays correct
+#   when the buffers move rather than depending on the reader noticing.
 #
 # THIS UNIT
 #   RDID read 0x0B 0x40 0x17 on 2026-08-01: XTX manufacturer 0x0B, model 0x4017,
@@ -132,8 +154,11 @@ set RAM_END 0x20040000          ;# nRF52840 has 256 KiB RAM: 0x20000000..0x2003F
 set RETAINED_LO 0x20000000      ;# retained page, holds the boot bits --
 set RETAINED_HI 0x200000FF      ;# NEVER a scratch buffer. R10 12.1.
 set SPIM_MAXCNT_LIMIT 65535     ;# RXD.MAXCNT/TXD.MAXCNT are 16-bit fields
-# recommended bulk chunk: power of two, divides 8 MiB into 256 reads, and it
-# sits well under the nor_read_max cap that the buffer layout actually allows
+# PREFERRED bulk chunk, not a guaranteed one: power of two, divides 8 MiB into
+# 256 reads, and it sits well under the nor_read_max cap the DEFAULT buffer
+# layout allows (61436). Move RX_BUF and that stops being true -- RX_BUF at
+# 0x2003C000 caps at 12284 and this value is then nearly 3x too large. Never
+# use it raw; nor_bulk_chunk clamps it to whatever the current layout permits.
 set NOR_CHUNK 32768
 
 # --- Short-transaction detection. See "UNPROVEN CHECK" in the header. ---------
@@ -178,6 +203,14 @@ proc spi_txn {txlist rxlen} {
     # wrote. Without this, a short transaction yields a backup that looks
     # complete and is not, which is the one failure a backup tool must never
     # have. Read AFTER EVENTS_END; the register is not valid before it.
+    #
+    # COUNT, NOT DESTINATION. This compares how many bytes moved against how
+    # many were asked for. It says nothing about where they went. If $want
+    # exceeds the room after RX_BUF, EasyDMA writes all $want bytes anyway --
+    # through RX_BUF and over TX_BUF -- and AMOUNT == want, so this passes. Only
+    # nor_read_max, applied BEFORE the transaction, bounds that. Callers issuing
+    # bulk 0x03 must go via nor_read_raw. Do not read a pass here as proof the
+    # bytes landed in the buffer you intended.
     if {$SPIM_CHECK_AMOUNT} {
         set got [lindex [read_memory $SPIM_RXD_AMOUNT 32 1] 0]
         if {$got != $want} {
@@ -211,6 +244,24 @@ proc nor_read_max {} {
         if {$to_tx < $lim} { set lim $to_tx }
     }
     return [expr {$lim - 4}]   ;# 4 bytes of the RX window are opcode+address echo
+}
+
+# Bulk chunk size that the CURRENT buffer layout actually permits. Arithmetic
+# only. NOR_CHUNK is the preference; this clamps it to nor_read_max, rounding
+# down to a power of two so the chunk still divides the device size evenly and
+# the chunk files stay concatenable. Call it per run, not once at source time:
+# it re-reads the buffer placement every time, so moving RX_BUF shrinks the
+# chunk automatically instead of silently overrunning.
+proc nor_bulk_chunk {} {
+    global NOR_CHUNK
+    set cap [nor_read_max]
+    if {$cap < 1024} {
+        error "nor_read_max is $cap -- no sane bulk chunk fits; move RX_BUF/TX_BUF farther apart"
+    }
+    if {$NOR_CHUNK <= $cap} { return $NOR_CHUNK }
+    set c 1024
+    while {$c*2 <= $cap} { set c [expr {$c*2}] }
+    return $c
 }
 
 # 0xAB, release from deep power-down. THE ONE NON-READ OPCODE IN THIS FILE.
@@ -275,15 +326,28 @@ proc nor_assert_idle {} {
     return $s
 }
 
-# READ (0x03). The only bulk data path here. Streams continuously once the
-# opcode and 24-bit address are clocked out, so one transaction moves up to
-# nor_read_max bytes. Returns a byte list; for bulk backup prefer dump_image
-# from [RX_BUF+4] (see the header).
-proc nor_read {a len} {
-    global RX_BUF
+# READ (0x03), bounds-checked, WITHOUT marshalling the payload into Tcl. This
+# is the single gate every bulk read goes through: it is the only place a 0x03
+# transaction is issued, so the length bound and the retained-page check in
+# nor_read_max cannot be skipped by taking a shortcut. On return the payload is
+# at [RX_BUF+4] for dump_image; nothing is copied.
+#
+# The checks here are the ONLY defence against a MAXCNT that overruns RX_BUF.
+# The RXD.AMOUNT assertion in spi_txn counts bytes, not their destination, and
+# an overrun moves exactly the requested count -- into the wrong memory. See
+# "UNPROVEN CHECK" in the header.
+proc nor_read_raw {a len} {
     set cap [nor_read_max]
     if {$len < 1 || $len > $cap} { error "nor_read len $len out of range 1..$cap" }
     if {$a < 0 || $a > 0xFFFFFF} { error "nor_read addr 0x[format %X $a] outside the 24-bit range" }
     spi_txn [concat [list 0x03] [ab $a]] $len
+    return $len
+}
+
+# READ (0x03) returning a Tcl byte list. Convenient for small reads and slow for
+# large ones -- for bulk backup use nor_read_raw plus dump_image (see header).
+proc nor_read {a len} {
+    global RX_BUF
+    nor_read_raw $a $len
     return [read_memory [expr {$RX_BUF+4}] 8 $len]
 }
