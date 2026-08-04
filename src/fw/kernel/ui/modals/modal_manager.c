@@ -478,6 +478,14 @@ void modal_manager_handle_button_event(PebbleEvent *event) {
         window_stack_remove(window, true /* animated */);
       } else {
         click_recognizer_handle_button_down(&click_manager->recognizers[id]);
+#if CONFIG_TOUCH_NAV_BUTTONS
+        if (event->button.is_synthetic_click) {
+          // Atomic discrete click: press+release in the same synchronous
+          // call, so the recognizer can never be left held and its repeat
+          // timer is armed and cancelled before it can fire.
+          click_recognizer_handle_button_up(&click_manager->recognizers[id]);
+        }
+#endif
       }
       break;
     }

@@ -2,7 +2,6 @@ if bld.env.CONFIG_HAL_NORDIC_NRF52840:
     bld.env.append_unique('DEFINES', [
         'NRF52840_XXAA',
         'NRF_CONFIG_NFCT_PINS_AS_GPIOS',
-        'CONFIG_GPIO_AS_PINRESET',
         'NRFX_I2S_ENABLED=1',
         'NRFX_I2S0_ENABLED=1',
         'NRFX_GPIOTE_ENABLED=1',
@@ -12,6 +11,7 @@ if bld.env.CONFIG_HAL_NORDIC_NRF52840:
         'NRFX_PWM_ENABLED=1',
         'NRFX_PWM0_ENABLED=1',
         'NRFX_SPIM_ENABLED=1',
+        'NRFX_SPIM2_ENABLED=1',
         'NRFX_SPIM3_ENABLED=1',
         'NRFX_TIMER_ENABLED=1',
         'NRFX_TIMER1_ENABLED=1',
@@ -22,6 +22,10 @@ if bld.env.CONFIG_HAL_NORDIC_NRF52840:
         'NRFX_UARTE_ENABLED=1',
         'NRFX_UARTE0_ENABLED=1',
     ])
+    if not bld.env.CONFIG_BOARD_BANGLE2:
+        # Bangle.js 2 is sealed: no reset pad. Keep UICR PSELRESET erased
+        # (matches Espruino). See docs/boards/bangle2/index.md.
+        bld.env.append_unique('DEFINES', ['CONFIG_GPIO_AS_PINRESET'])
 
 micro_sources = bld.path.ant_glob('nrfx/**/*.c', excl=['**/system_nrf*.c', '**/startup_nrf_common.c', '**/nrfx_twi_twim.c'])
 
@@ -38,6 +42,8 @@ micro_includes = [
 if bld.env.CONFIG_BOARD_ASTERIX:
     # is there a better way to do this?
     micro_includes += ['../../src/fw/board/boards/board_asterix']
+elif bld.env.CONFIG_BOARD_BANGLE2:
+    micro_includes += ['../../src/fw/board/boards/board_bangle2']
 else:
     bld.fatal("no board for nRF5 includes")
 

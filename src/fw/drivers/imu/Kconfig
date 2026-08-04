@@ -27,6 +27,11 @@ config ACCEL_LSM6DSO
     help
       Support for the ST LSM6DSO accelerometer/gyroscope.
 
+config ACCEL_KX023
+    bool "Kionix KX023"
+    help
+      Support for the Kionix KX023 accelerometer (polled, no interrupt line).
+
 endchoice
 
 if ACCEL_LIS2DW12
@@ -110,6 +115,16 @@ config ACCEL_LSM6DSO_SCALE_MG
 
 endif # ACCEL_LSM6DSO
 
+if ACCEL_KX023
+
+config ACCEL_KX023_SCALE_MG
+    int "Full-scale range (mg)"
+    default 2000
+    help
+      Acceleration full-scale range in mg (2000, 4000 or 8000).
+
+endif # ACCEL_KX023
+
 menuconfig MAG
     bool "Magnetometer"
     help
@@ -129,6 +144,13 @@ config MAG_MMC5603NJ
     bool "MEMSIC MMC5603NJ"
     help
       Support for the MEMSIC MMC5603NJ magnetometer.
+
+config MAG_GENERIC
+    bool "Generic/unknown I2C magnetometer"
+    help
+      Reverse-engineered driver for an unidentified I2C magnetometer (e.g. the
+      Bangle.js 2 "UNKNOWN_0C" compass). Presence probe + raw XYZ read only; no
+      part-specific calibration or scaling.
 
 endchoice
 

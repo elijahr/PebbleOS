@@ -1,8 +1,13 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <setjmp.h>
+
+#if defined(CONFIG_BOARD_BANGLE2)
+#include <nrfx.h>  // NRF_UICR for the boot-time REGOUT0 visibility log.
+#endif
 
 #include "debug/power_tracking.h"
 
@@ -127,6 +132,9 @@ static void print_splash_screen(void)
 int main(void) {
   soc_early_init();
 
+  // At the full-flash 0x0 layout this stores 0x0 into a register whose reset
+  // value is already 0 — a harmless no-op. Kept so the code stays identical
+  // across boards and stays correct if the image ever moves again.
   extern void * __ISR_VECTOR_TABLE__;  // Defined in linker script
   SCB->VTOR = (uint32_t)&__ISR_VECTOR_TABLE__;
 
@@ -142,6 +150,40 @@ int main(void) {
   pulse_early_init();
   print_splash_screen();
 
+#if defined(CONFIG_BOARD_BANGLE2)
+  // Boot visibility for UICR triage (runbook step 0). Expected on this watch:
+  // 0xFFFFFFFD (VOUT=5 = 3.3 V). The Reset_Handler guard only programs the
+  // erased default; any other non-3V3 value is fixed over SWD, never here.
+  PBL_LOG_DBG("UICR REGOUT0=0x%08" PRIx32, NRF_UICR->REGOUT0);
+#endif
+
+  // Bare-metal at 0x0: no bootloader armed a WDT. Arm our own (nrf5.c: 8 s,
+  // RR0) before rtc_init so the boot window is covered from here on. The
+  // nRF52840 WDT survives a soft reset and locks its config registers while
+  // running, so on a warm boot these writes hit an already-running WDT with
+  // identical config: the config stores are ignored and TASKS_START on a
+  // running WDT does nothing — a benign no-op. Do not "fix" the double-arm.
+  // The WDT counts on LFCLK; per the nRF52840 PS the started WDT forces the
+  // 32 kHz LFRC on, so counting begins at arm (even before board_early_init
+  // starts the XTAL LFCLK). The RTC COMPARE_1 startup-feed ISR (~500 ms,
+  // 16x margin under the 8 s timeout) keeps it fed through slow-but-alive
+  // init until task-watchdog handover.
+#if defined(CONFIG_WATCHDOG_SELF_ARM) && !defined(CONFIG_BANGLE2_TEST_NO_WDT_ARM)
+  // watchdog_init() leaves WDT CONFIG at reset default (run-while-sleep,
+  // pause-on-debug-halt) — intended.
+  watchdog_init();
+  watchdog_start();
+#endif
+  // First feed of OUR just-armed WDT (redundant right after arming, but
+  // harmless, and it keeps the RED-test observable). After self-arm the WDT
+  // runs at 8 s; the ungated RTC COMPARE_1 startup feeds (rtc/nrf5.c,
+  // task_watchdog_startup_feed) cover the window between arm and the
+  // task-watchdog handover (task_watchdog.c). Slow init paths (flash scrub,
+  // PFS check) can legitimately exceed 8 s; the startup feed keeps them
+  // alive while a truly wedged CPU (no RTC ISR, no feed) still resets.
+#ifndef CONFIG_BANGLE2_TEST_NO_WDT_STARTUP_FEED
+  watchdog_feed();
+#endif
   rtc_init();
 
 #ifdef CONFIG_RECOVERY_FW

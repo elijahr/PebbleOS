@@ -145,6 +145,12 @@ typedef struct {
   const ButtonConfig buttons[NUM_BUTTONS];
   const ButtonComConfig button_com;
   const bool active_high;
+  //! Single-physical-button remap. When true, the one real button wired to
+  //! BUTTON_ID_SELECT is time-disambiguated by the debounce sampler: a short
+  //! press emits SELECT (on release), a long hold emits BACK. Lets a
+  //! one-button watch drive the four-button UI globally. Defaults to false
+  //! (stock four-button behavior) for every other board.
+  const bool select_short_back_long;
   nrfx_timer_t timer;
 } BoardConfigButton;
 
@@ -196,6 +202,21 @@ typedef struct {
 
   const NrfLowPowerPWM extcomin;
 } BoardConfigSharpDisplay;
+
+// External SPI-NOR flash driven over a dedicated nRF52840 SPIM (EasyDMA) master.
+// SCK/MOSI/MISO are owned by the SPIM peripheral; CS is a plain GPIO the driver
+// toggles per command (active low), exactly like the display bus manages its own
+// CS. Used by drivers/flash/spi_nor.
+typedef struct {
+  nrfx_spim_t spi;
+
+  const OutputConfig clk;
+  const OutputConfig mosi;
+  const OutputConfig miso;
+  const OutputConfig cs;
+
+  uint32_t clk_freq_hz;
+} BoardConfigFlashSPI;
 
 typedef const struct UARTDevice UARTDevice;
 typedef const struct I2CBus I2CBus;

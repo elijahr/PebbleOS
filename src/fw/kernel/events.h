@@ -147,8 +147,14 @@ typedef struct PACKED { // 1 byte
   bool is_active; //<! do not disturb has become active or has become inactive
 } PebbleDoNotDisturbEvent;
 
-typedef struct PACKED { // 1 byte?
+typedef struct PACKED { // 2 bytes
   ButtonId button_id;
+  //! True for a BUTTON_DOWN that represents one complete, atomic discrete
+  //! click (touch-nav boards, CONFIG_TOUCH_NAV_BUTTONS): consumers perform
+  //! press+release on the ClickRecognizer in the same synchronous call, and
+  //! no separate BUTTON_UP is ever queued. Always false everywhere else;
+  //! inert on boards with physical buttons.
+  bool is_synthetic_click;
 } PebbleButtonEvent;
 
 typedef enum PhoneEventType {

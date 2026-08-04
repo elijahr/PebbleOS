@@ -613,7 +613,10 @@
       "id": -90,
       "enum": "REMINDERS",
       "md_fn": "reminder_app_get_info",
-      "color_argb8": "GColorChromeYellowARGB8"
+      "color_argb8": "GColorChromeYellowARGB8",
+      "ifdefs": [
+        "CONFIG_MIC"
+      ]
     },
     {
       "id": -91,

@@ -3,7 +3,7 @@
 
 #include <pbl/drivers/speaker/qemu/audio.h>
 
-#include "services/system_task.h"
+#include <pbl/services/system_task.h>
 
 #include "FreeRTOS.h"
 

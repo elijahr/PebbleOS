@@ -1,0 +1,84 @@
+# bangle2 (Bangle.js 2 / SMA-Q3, nRF52840) board configuration
+#
+# PRF-first bring-up skeleton (task S2). Reuses the FLINT 144x168 mono SDK
+# platform and letterboxes onto the 176x176 panel. Only the minimal driver
+# closure needed for a PRF link is selected here; sensor/flash/power tracks
+# fill in their own CONFIG selects later.
+
+CONFIG_SOC_NRF52=y
+
+CONFIG_HAL_NORDIC=y
+CONFIG_HAL_NORDIC_NRF52840=y
+
+CONFIG_PLATFORM_FLINT=y
+
+CONFIG_SCREEN_COLOR_DEPTH_BITS_1=y
+
+CONFIG_UART=y
+
+CONFIG_BACKLIGHT=y
+CONFIG_BACKLIGHT_PWM=y
+
+CONFIG_DISPLAY=y
+
+CONFIG_FLASH=y
+CONFIG_FLASH_SPI_NOR=y
+
+CONFIG_OTP=y
+CONFIG_OTP_FLASH=y
+
+CONFIG_WATCHDOG=y
+
+CONFIG_EXTI=y
+
+CONFIG_GPIO=y
+
+CONFIG_I2C=y
+
+# Track B input sensors.
+# Accelerometer (KX023, polled) is enabled and verified end-to-end in Renode.
+CONFIG_ACCEL_KX023=y
+CONFIG_ACCEL_KX023_SCALE_MG=2000
+# Touch (CST816) driver, board wiring, nonfree blob and Renode model are all in
+# place and verified end-to-end (tap INT delivered to the firmware GPIOTE). The
+# earlier "launcher content stays blank + unhandled IRQ" regression when touch
+# was enabled was a symptom of the intermittent BLE-vs-unmodeled-RADIO boot
+# crash (see the Bluetooth note above), amplified by touch bringing up more of
+# the UI; it clears now that the BLE stub is selected.
+CONFIG_TOUCH=y
+CONFIG_TOUCH_CST816=y
+# Barometer/pressure (BMP280, Stage 2) on a software bit-bang I2C bus at 0x76.
+CONFIG_PRESSURE=y
+CONFIG_PRESSURE_BMP280=y
+# Magnetometer (Stage 2): unidentified part at 0x0C (Espruino UNKNOWN_0C) on a
+# software bit-bang I2C bus. Generic reverse-engineered driver.
+CONFIG_MAG=y
+CONFIG_MAG_GENERIC=y
+# Heart-rate (Stage 2): Vcare VC31/VC31B at 0x33 on the repurposed bit-bang HRM
+# bus. INTERFACE-ONLY (proprietary PPG->BPM algorithm is not implemented).
+CONFIG_HRM=y
+CONFIG_HRM_VC31=y
+# Bangle.js 2 has a single physical button, so touch has to cover the rest of
+# the four-button UI: swipe up/down -> UP/DOWN, tap -> SELECT. The single-button
+# short=SELECT / long=BACK remap is a board-config flag (board_bangle2.h).
+CONFIG_TOUCH_NAV_BUTTONS=y
+
+CONFIG_PWM=y
+
+CONFIG_RTC=y
+
+CONFIG_RNG=y
+CONFIG_RNG_STUB=y
+
+CONFIG_TEMPERATURE=y
+CONFIG_TEMPERATURE_STUB=y
+
+# Bluetooth: the nRF SoC defaults the BT backend to NimBLE, which runs the full
+# BLE controller/link layer directly against the nRF RADIO/AAR/CCM peripherals.
+# Renode does not model those, so on the emulator the Nimble link layer thrashes
+# thousands of unhandled peripheral accesses and, on a fraction of boots (a
+# scheduling-interleaving race), faults into a passert -> core-dump reset. That
+# is the intermittent boot-reboot seen in the harness bootsweep. BLE is not part
+# of board bring-up; connectivity is a separate action item that needs a modeled
+# RADIO. Select the stub backend so bring-up boots deterministically.
+CONFIG_BT_FW_STUB=y

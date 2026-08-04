@@ -96,6 +96,13 @@ void watchface_handle_button_event(PebbleEvent *e) {
     switch (e->type) {
     case PEBBLE_BUTTON_DOWN_EVENT:
       click_recognizer_handle_button_down(&data->click_manager.recognizers[e->button.button_id]);
+#if CONFIG_TOUCH_NAV_BUTTONS
+      if (e->button.is_synthetic_click) {
+        // Atomic discrete click: press+release in the same synchronous call
+        // so the recognizer can never be left held.
+        click_recognizer_handle_button_up(&data->click_manager.recognizers[e->button.button_id]);
+      }
+#endif
       break;
     case PEBBLE_BUTTON_UP_EVENT:
       click_recognizer_handle_button_up(&data->click_manager.recognizers[e->button.button_id]);

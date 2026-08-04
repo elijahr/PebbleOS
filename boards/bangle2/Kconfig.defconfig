@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Core Devices LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# The recovery firmware shares the 1 MiB flash bank with the normal
+# firmware and is linked in the upper half.
+config FW_FLASH_SIZE
+    default 0x80000 if RECOVERY_FW && !MFG
+    default 0xD1000
+
+# Bare-metal full-flash image at 0x0: no MBR, no SoftDevice, no stock
+# bootloader. SWD is the only delivery path. The SoC default 0x8000 is
+# neutralized for this board by the !BOARD_BANGLE2 guard in
+# soc/nrf/Kconfig.defconfig. The image spans 0x0-0xD1000; the 0x2F000
+# (188 KiB) of internal flash above it is free for future growth.
+config FLASH_OFFSET
+    default 0x0

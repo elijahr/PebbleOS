@@ -322,6 +322,16 @@ void watchface_handle_button_event(PebbleEvent *e) {
       s_buttons_pressed |= (BIT_SET << e->button.button_id);
       click_recognizer_handle_button_down(&s_click_manager.recognizers[e->button.button_id]);
       prv_check_combo_back_hold();
+#if CONFIG_TOUCH_NAV_BUTTONS
+      if (e->button.is_synthetic_click) {
+        // Atomic discrete click: mirror the BUTTON_UP path in the same
+        // synchronous call so neither s_buttons_pressed nor the recognizer
+        // can ever be left held.
+        s_buttons_pressed &= ~(BIT_SET << e->button.button_id);
+        prv_check_combo_back_hold();
+        click_recognizer_handle_button_up(&s_click_manager.recognizers[e->button.button_id]);
+      }
+#endif
       break;
     case PEBBLE_BUTTON_UP_EVENT:
       s_buttons_pressed &= ~(BIT_SET << e->button.button_id);

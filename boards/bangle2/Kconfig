@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 Core Devices LLC
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_BANGLE2
+    bool
+    default y
+
+config BANGLE2_TEST_NO_WDT_STARTUP_FEED
+    bool "TEST ONLY: skip the startup HW-watchdog feeds (Renode honesty RED test)"
+    default n
+    help
+      When set, main() does NOT issue the early watchdog_feed() before
+      rtc_init(), and the RTC COMPARE_1 interrupt does NOT call
+      task_watchdog_startup_feed(). This produces a dedicated RED-test ELF
+      that MUST fail the Renode early-RR0-feed honesty check: with the
+      startup feeds removed, no CPU write reaches NRF_WDT->RR[0] in the
+      early boot window. Never enable in a shipping build.
+
+config WATCHDOG_SELF_ARM
+    bool
+    default y if BOARD_BANGLE2
+    help
+      Bare-metal full-flash boards have no bootloader to arm the hardware
+      watchdog. When set, main() arms the driver's own WDT (nrf5.c: 8 s,
+      RR0) early in boot, immediately before rtc_init.
+
+config BANGLE2_TEST_NO_WDT_ARM
+    bool "TEST ONLY: skip the boot-time WDT self-arm (Renode honesty RED test)"
+    default n
+    help
+      When set, main() does NOT call watchdog_init()/watchdog_start(), so
+      the hardware watchdog is never armed. This produces a dedicated
+      RED-test ELF that MUST fail the Renode wdt_arm honesty check: no CPU
+      write reaches NRF_WDT->TASKS_START and RUNSTATUS stays 0 after boot.
+      Never enable in a shipping build.
+
+config PRF_UNAVAILABLE
+    bool
+    default y if BOARD_BANGLE2
+    help
+      No PRF image and no bootloader exist on this board (bare-metal 0x0
+      layout). Recovery paths must degrade to a stable state instead of
+      resetting into PRF: the sticky FORCE_PRF boot bit has no consumer
+      and a PRF reset lands in the same image forever.

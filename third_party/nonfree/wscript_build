@@ -25,6 +25,17 @@ elif bld.env.CONFIG_BOARD_GETAFIX:
             'pebbleos-nonfree/cst816/getafix',
         ],
     )
+elif bld.env.CONFIG_BOARD_BANGLE2:
+    # TEMPORARY: bangle2 recovery blob. Panel was mis-flashed with the getafix
+    # CST816S firmware; this points at the lierda CST816D recovery blob instead
+    # so touch_sensor_init can re-flash the correct firmware. Revert to the
+    # getafix blob once recovery is confirmed.
+    bld(
+        name='cst816_fw',
+        export_includes=[
+            'cst816-bangle2-recovery',
+        ],
+    )
 if bld.env.CONFIG_BOARD_OBELIX:
     includes = [
         'pebbleos-nonfree/gh3x2x/algo_lib/algo_params/HR/04_EXCLUSIVE',

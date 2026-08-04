@@ -18,6 +18,21 @@ config FLASH_GD25Q256E
     help
       Support for the GigaDevice GD25Q256E NOR flash.
 
+config FLASH_BANGLE2
+    bool "Bangle.js 2 8 MB SPI NOR"
+    help
+      Support for the Bangle.js 2 (SMA-Q3) 8 MB dual-IO SPI NOR flash. The
+      concrete part is not named in the source; a generic dual-IO opcode set
+      is used.
+
+config FLASH_SPI_NOR
+    bool "Generic SPI NOR over SPIM"
+    help
+      Support for a standard SPI NOR flash driven over an nRF52840 SPIM
+      (EasyDMA) master with a GPIO chip-select. Used by the Bangle.js 2, whose
+      8 MB SPI NOR is wired to plain GPIO pins (a standard SPI part on a
+      standard SPI master), not the QSPI peripheral.
+
 config FLASH_QEMU
     bool "QEMU External Flash"
     default y if SOC_QEMU

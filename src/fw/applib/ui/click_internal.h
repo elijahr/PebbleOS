@@ -51,6 +51,12 @@ typedef struct ClickRecognizer {
 
   AppTimer *hold_timer;
   AppTimer *multi_click_timer;
+#if CONFIG_TOUCH_NAV_BUTTONS
+  //! Orphan-release safety net (touch-nav boards only): pending forced
+  //! release for a BUTTON_DOWN that never received its BUTTON_UP. Armed on
+  //! every button down, cancelled on button up / reset. See click.c.
+  AppTimer *orphan_timer;
+#endif
 } ClickRecognizer;
 
 typedef struct ClickManager {

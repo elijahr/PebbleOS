@@ -48,3 +48,7 @@ void task_watchdog_mask_clear(PebbleTask task);
 //! Should only be called if the task_watchdog timer has been halted for some reason
 //! (For example, when we are in stop mode)
 void task_watchdog_step_elapsed_time_ms(uint32_t elapsed_ms);
+
+//! Reload the hardware watchdog UNCONDITIONALLY during startup, until the gated
+//! task-watchdog path takes over. Called from the RTC 500 ms interrupt.
+void task_watchdog_startup_feed(void);
