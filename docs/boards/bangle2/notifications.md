@@ -268,14 +268,27 @@ is no use of the symbol in `prf_update`.
   choice is safe. When the watch has NO valid pack, the choice becomes random
   (`resource_storage_flash.c:78` uses `rand()`), so there is one chance in two
   that it writes over the good bank. A watch that has a new firmware and an old
-  pack has no valid pack. The mono pack at `0x200000` is the only copy, the
-  external flash has no backup that anybody can make again, and the panic
-  screen does not stop this: Bluetooth and the transfer of bytes continue to
-  operate.
+  pack has no valid pack. The mono pack at `0x200000` is the only copy on the
+  watch, and the panic screen does not stop this: Bluetooth and the transfer of
+  bytes continue to operate.
 
   Therefore, if you must change the platform: SEND THE RESOURCES FIRST, while
   the old firmware still starts, THEN write the new firmware. Never the
   opposite order. (Analysis from pebble-color.)
+
+  MAKE A COPY OF THE EXTERNAL FLASH BEFORE YOU DO ANY OF THIS. An earlier
+  version of this page said the external flash cannot get a backup. THAT IS NOT
+  TRUE, and the false statement is dangerous in the direction that hurts: a
+  person who believes a copy is impossible does not try to make one, and then
+  the accident above has no way back.
+
+  The true condition: the part is not in the memory map, so a probe cannot read
+  it with `dump_image`. But a host CAN drive the SPIM2 registers over SWD while
+  the processor is stopped, and make the chip read itself. No program on the
+  watch is necessary. A copy of 8 MB made this way exists, dated 2026-07-30,
+  and the method is in the design document for R10, part 12.1. Reading the
+  external flash is permitted; only writing it has no tool.
+  (Correction from pebble-touch-3.)
 
 - Do not trust the screen of the application to tell you that a transfer
   failed. A refusal by the safety check goes to the state `Idle` with no
