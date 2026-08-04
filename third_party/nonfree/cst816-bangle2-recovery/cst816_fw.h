@@ -1,9 +1,15 @@
 /* SPDX-FileCopyrightText: Lierda Science & Technology Group Co., Ltd. */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* CST816D touch controller recovery firmware, used to reflash a controller
- * whose firmware has been corrupted. Taken verbatim from
- * github.com/lierda-iot/CAT1.bis_OpenCPU, at
+/* CST816D recovery firmware for the Bangle.js 2 touch panel. The panel is a
+ * CST816D and this is a CST816D image, so the part is right. Whether it is
+ * the right firmware for THIS MODULE is not established: it targets project
+ * ID 2511146, and the measured touch geometry shows a non-orthogonal shear
+ * that a mismatched electrode map would explain and mounting orientation
+ * cannot (see the workaround note in src/fw/drivers/touch/cst816/cst816.c).
+ * Treat it as a recovery image of last resort, not a known-good stock image.
+ *
+ * Taken verbatim from github.com/lierda-iot/CAT1.bis_OpenCPU, at
  * components/driver/tp/axs5106/cst816d/
  *   V01_0x6a07_CSW_2511146_CST816D_HYN_COB_ZY_W01_W60_updata.h
  * That repository is Apache-2.0; the file itself carries no copyright notice
