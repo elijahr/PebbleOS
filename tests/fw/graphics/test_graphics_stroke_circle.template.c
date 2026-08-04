@@ -237,6 +237,14 @@ extern void graphics_circle_quadrant_draw_stroked_aa(
 // property of the API contract instead: a half-circle render must be the exact pixel union of its
 // two quadrant renders. It holds regardless of what the goldens contain, so it still fails if all
 // goldens are regenerated.
+//
+// KNOWN GAP, DELIBERATE, NOT AN OVERSIGHT: only the .8bit goldens for the aa quadrants exist.
+// The non-aa quadrant goldens have .Xbit siblings and these do not. Only the 8bit platform is
+// instantiated today (see wscript_build), so the .Xbit set could not be generated from a build
+// that never runs. THE DAY A SECOND BIT DEPTH IS RE-ENABLED, THIS TEST FAILS HERE for missing
+// goldens -- that is this gap surfacing, not a regression in the renderer. Generate them from
+// the new build and inspect before committing; see the commit that added the .8bit set for how
+// they were checked (grey-level count, and pixel-union against the non-aa siblings).
 
 #define UNION_BG_ARGB8 (GColorWhiteARGB8)
 
