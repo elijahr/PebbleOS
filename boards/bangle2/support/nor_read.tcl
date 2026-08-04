@@ -221,9 +221,28 @@ proc nor_read_max {} {
 #
 # NEVER called implicitly. nor_read and nor_rdid will not wake the part behind
 # your back; a read that fails should fail visibly, and the decision to send an
-# opcode that is not a read stays with the caller. Usage:
+# opcode that is not a read stays with the caller.
+#
+# CALL IT UNCONDITIONALLY, before the first RDID. It is one transaction, it is
+# non-mutating, and it is a no-op on a part that is already awake -- so there is
+# nothing to gain by first guessing whether the part is asleep, and a wrong
+# guess is expensive. Do NOT branch on the TEXT of an RDID: read_memory returns
+# hex strings, so a sleeping part reads back as "0x0 0x0 0x0" (or "0xff 0xff
+# 0xff"), never as decimal. A [string equal] against decimal text can never
+# match and the guard silently never fires. Compare NUMERICALLY -- expr parses
+# the 0x form -- and after an unconditional wake an all-0x00/all-0xFF RDID has
+# only one meaning left: the bus is dead. Usage:
+#     nor_wake                        ;# unconditional; safe on an awake part
 #     set id [nor_rdid]
-#     if {$id eq "0 0 0" || $id eq "255 255 255"} { nor_wake; set id [nor_rdid] }
+#     if {[lindex $id 0] == 0x00 || [lindex $id 0] == 0xFF} {
+#         error "RDID [join $id] after a wake -- dead bus, not power-down"
+#     }
+#
+# WHAT THIS AVERTS. A part left in deep power-down answers RDID with all-0x00,
+# and 0x03 READ from it returns all-0x00 as well. Nothing errors and nothing is
+# short: you get a backup file of exactly the right SIZE, filled with zeros,
+# that looks complete by every check except opening it. Flash on the strength of
+# that file and you have no copy of the system resource pack at all.
 proc nor_wake {} { spi_txn [list 0xAB] 0; sleep 2 }
 
 # RDID (0x9F). The FIRST command to issue: one transaction, and it settles
