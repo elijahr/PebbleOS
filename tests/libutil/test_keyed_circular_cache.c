@@ -113,7 +113,7 @@ void test_keyed_circular_cache__push(void) {
   prv_test_backing_data(2, 1);
 }
 
-void test_circular_cache__get(void) {
+void test_keyed_circular_cache__get(void) {
   prv_test_get_miss(0);
   prv_test_get_miss(1);
   prv_test_get_miss(2);

@@ -481,7 +481,7 @@ void test_graphics_fill_rect_${BIT_DEPTH_NAME}__origin_aa_corners(void) {
 extern uint16_t prv_clamp_corner_radius(GSize size, GCornerMask corner_mask,
                                         uint16_t radius);
 
-void test_graphics_fill_rect__corner_radius(void) {
+void test_graphics_fill_rect_${BIT_DEPTH_NAME}__corner_radius(void) {
   // Test 0 radius cases
   cl_assert_equal_i(prv_clamp_corner_radius(GSize(0, 0), GCornerNone, 0), 0);
   cl_assert_equal_i(prv_clamp_corner_radius(GSize(0, 0), GCornerNone, 2), 0);

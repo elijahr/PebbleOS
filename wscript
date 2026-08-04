@@ -124,7 +124,8 @@ def options(opt):
     gr.add_option('-D', '--debug_test', action='store_true',
         help='Execute tests within GDB. Use alongside -M.')
     gr.add_option('-M', '--match', dest='regex', default=None, action='store',
-        help='Run regex match tests. Example: ./waf test -M "test.*resource.*"')
+        help='Run tests whose name matches the given regex. The regex is matched '
+             'against the test name, not its path. Example: ./waf test -M "test_.*resource.*"')
     gr.add_option('-L', '--list_tests', dest='list_tests', action='store_true',
         help='List all test names. Usually used in conjunction with -M. Example: '
              './waf test -M test_animation -L')

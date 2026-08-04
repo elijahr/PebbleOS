@@ -8,6 +8,7 @@ from string import Template
 import hashlib
 import os
 import re
+import subprocess
 import sys
 import unicodedata as ud
 
@@ -178,6 +179,23 @@ def summary(bld):
         raise Errors.WafError("test failed")
 
 
+def check_regex_matched_a_test(bld):
+    """Fail the run if --match/-M selected no tests at all.
+
+    Without this, an unmatched -M creates no tasks, summary() returns early on
+    the empty result list, and the run exits 0 having tested nothing.
+    """
+    if not bld.options.regex:
+        return
+
+    if getattr(bld, "clar_regex_matches", 0) == 0:
+        bld.fatal(
+            'No tests matched --match/-M "%s". The pattern is a regex matched '
+            "against the test name (e.g. test_atoi), not against the test "
+            "source path." % bld.options.regex
+        )
+
+
 @taskgen_method
 @feature("test_product_source")
 def test_product_source_hook(self):
@@ -247,6 +265,47 @@ def build_product_source_files(
     return product_objects
 
 
+# Files the clar harness generator reads. clar.py is the generator itself and
+# embeds the C sources it copies into the build directory; clar.py picks one
+# clar_print_*.c at run time, so both are listed.
+CLAR_TOOL_FILES = [
+    "clar.py",
+    "clar.c",
+    "clar.h",
+    "clar_categorize.c",
+    "clar_fixtures.c",
+    "clar_fs.c",
+    "clar_mock.c",
+    "clar_print_default.c",
+    "clar_print_tap.c",
+    "clar_sandbox.c",
+]
+
+
+def get_clar_tool_nodes(bld):
+    """Resolve CLAR_TOOL_FILES to nodes, once per build.
+
+    Every harness task declares these as implicit dependencies, so editing the
+    generator invalidates the generated clar_main.c instead of leaving every
+    existing build tree with a stale copy.
+    """
+    nodes = getattr(bld, "clar_tool_nodes", None)
+    if nodes is not None:
+        return nodes
+
+    clar_dir = bld.env.CLAR_DIR
+    nodes = []
+    for name in CLAR_TOOL_FILES:
+        path = os.path.join(clar_dir, name)
+        node = bld.root.find_node(path)
+        if node is None:
+            raise Errors.WafError("clar tool file not found: {}".format(path))
+        nodes.append(node)
+
+    bld.clar_tool_nodes = nodes
+    return nodes
+
+
 def get_bitdepth_for_platform(bld, platform):
     if platform in ("obelix", "gabbro"):
         return 8
@@ -270,11 +329,20 @@ def add_clar_test(
     platform,
     use,
 ):
+    # Copy every list this function appends to. These arrive straight from
+    # clar()'s arguments and are reused across its source/platform loops, so
+    # appending in place would grow the caller's list once per test declared.
+    test_libs = list(test_libs or [])
+    override_includes = list(override_includes or [])
+    use = list(use or [])
 
     if bld.options.regex:
-        filename = str(test_source).strip()
-        if not re.match(bld.options.regex, filename):
+        # Match the test name, not str(test_source): Node.__str__ is the
+        # absolute path, and re.match anchors at position 0, so a plain
+        # "-M test_atoi" could never match anything.
+        if not re.match(bld.options.regex, test_name):
             return
+        bld.clar_regex_matches = getattr(bld, "clar_regex_matches", 0) + 1
 
     platform_set = set(["default", "asterix", "obelix", "gabbro"])
 
@@ -314,11 +382,13 @@ def add_clar_test(
             "--clar-path=" + clar_dir,
             test_bld_dir,
         ]
-        result = bld.exec_command(cmd)
-        if result != 0:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            # Surface clar.py's own diagnostics; without them the registration
+            # guard's message is invisible outside a verbose build.
             raise Errors.WafError(
-                "clar harness generation failed (exit {}) for {}".format(
-                    result, test_src_file
+                "clar harness generation failed (exit {}) for {}\n{}{}".format(
+                    proc.returncode, test_src_file, proc.stdout, proc.stderr
                 )
             )
 
@@ -330,6 +400,9 @@ def add_clar_test(
         rule=_generate_clar_harness,
         source=test_source,
         target=[clar_harness, test_dir.make_node("clar.h")],
+        # Implicit deps, not extra sources: the rule indexes task.inputs[0] for
+        # the test source, so these must not land in inputs.
+        deps=get_clar_tool_nodes(bld),
     )
 
     src_includes = [
@@ -371,8 +444,6 @@ def add_clar_test(
     idl_includes = [root_build_dir + "src/idl"]
     includes += idl_includes
 
-    if use is None:
-        use = []
     # Add DUMA for memory corruption checking
     # conditionally disable duma based on DUMA_DISABLED being defined
     # DUMA is found in tests/vendor/duma
@@ -500,8 +571,8 @@ def clar(
     sources_ant_glob=None,
     test_sources_ant_glob=None,
     test_sources=None,
-    test_libs=[],
-    override_includes=[],
+    test_libs=None,
+    override_includes=None,
     add_includes=None,
     defines=None,
     test_name=None,
@@ -512,6 +583,11 @@ def clar(
 
     if test_sources_ant_glob is None and not test_sources:
         raise Exception()
+
+    # Runs after every clar() call has declared its tests.
+    if not getattr(bld, "added_regex_check_fun", False):
+        bld.add_post_fun(check_regex_matched_a_test)
+        bld.added_regex_check_fun = True
 
     if test_sources_ant_glob in bld.env.BROKEN_TESTS:
         Logs.pprint(
@@ -530,10 +606,9 @@ def clar(
                 )
                 return
 
-    if test_sources is None:
-        test_sources = []
-
-    # Make a copy so if we modify it we don't accidentally modify the callers list
+    # Make copies so if we modify these we don't accidentally modify the
+    # callers lists. test_sources is extended below by the ant glob.
+    test_sources = list(test_sources or [])
     defines = list(defines or [])
     defines.append("UNITTEST")
     defines.append("MEMFAULT=0")
@@ -560,21 +635,25 @@ def clar(
 
     for test_source in test_sources:
         if test_name is None:
-            test_name = test_source.name
-            test_name = test_name[: test_name.rfind(".")]  # Scrape the extension
+            # Derive the name from this source's own filename, minus the extension.
+            source_test_name = test_source.name
+            source_test_name = source_test_name[: source_test_name.rfind(".")]
+        else:
+            # An explicitly passed name wins for every source.
+            source_test_name = test_name
 
-    for platform in platforms:
-        add_clar_test(
-            bld,
-            test_name,
-            test_source,
-            sources_ant_glob,
-            sources,
-            test_libs,
-            override_includes,
-            add_includes,
-            defines,
-            runtime_deps,
-            platform,
-            use,
-        )
+        for platform in platforms:
+            add_clar_test(
+                bld,
+                source_test_name,
+                test_source,
+                sources_ant_glob,
+                sources,
+                test_libs,
+                override_includes,
+                add_includes,
+                defines,
+                runtime_deps,
+                platform,
+                use,
+            )

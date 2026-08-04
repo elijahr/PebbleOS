@@ -53,35 +53,35 @@ void test_atoi__error(void) {
 
 // atol will actually behave _exactly_ the same as atoi, so these tests are just copy-pasted
 // Would probably be good to make these more DRY
-void test_atol__basic(void) {
+void test_atoi__atol_basic(void) {
   cl_assert_equal_i(atol("500"), 500);
   cl_assert_equal_i(atol("765"), 765);
   cl_assert_equal_i(atol("573888"), 573888);
   cl_assert_equal_i(atol("713713"), 713713);
 }
 
-void test_atol__whitespace_pfx(void) {
+void test_atoi__atol_whitespace_pfx(void) {
   cl_assert_equal_i(atol("     500"), 500);
   cl_assert_equal_i(atol(" 765"), 765);
   cl_assert_equal_i(atol("                 573888"), 573888);
   cl_assert_equal_i(atol("        713713"), 713713);
 }
 
-void test_atol__suffix(void) {
+void test_atoi__atol_suffix(void) {
   cl_assert_equal_i(atol("500hurf"), 500);
   cl_assert_equal_i(atol("765berserker"), 765);
   cl_assert_equal_i(atol("573888 redmage"), 573888);
   cl_assert_equal_i(atol("713713 4 job fiesta111"), 713713);
 }
 
-void test_atol__sign(void) {
+void test_atoi__atol_sign(void) {
   cl_assert_equal_i(atol("+500"), 500);
   cl_assert_equal_i(atol("-765"), -765);
   cl_assert_equal_i(atol("   -573888"), -573888);
   cl_assert_equal_i(atol("  +713713"), +713713);
 }
 
-void test_atol__error(void) {
+void test_atoi__atol_error(void) {
   cl_assert_equal_i(atol("2147483647"), 2147483647); // last valid value
   cl_assert_equal_i(atol("4294967287"), (int)4294967287); // signed integer overflow
   // ((2147483648 * 10) + 1) & 0xFFFFFFFF
