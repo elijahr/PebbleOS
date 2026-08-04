@@ -58,9 +58,11 @@
 #      region is free -- the build reporting WORKER_RAM/APP_RAM at 0 percent is
 #      suggestive, not a guarantee. R10 12.1.
 #   4. NEVER PLACE A SCRATCH BUFFER IN 0x20000000-0x200000FF. That is the
-#      retained page and it holds the boot bits. nor_read_max below refuses to
-#      proceed if either buffer overlaps it; that guard is arithmetic only and
-#      touches no hardware.
+#      retained page and it holds the boot bits. spi_txn below refuses to issue
+#      ANY transaction if either buffer overlaps it, so the guard covers the
+#      small opcodes (nor_wake, nor_rdid, nor_status) as well as the bulk read
+#      path; nor_read_max applies the same predicate. That guard is arithmetic
+#      only and touches no hardware.
 #
 # UNPROVEN CHECK -- ADDED HERE, NOT PROVEN ON HARDWARE. TREAT AS UNDER TEST.
 #   spi_txn asserts that SPIM2's RXD.AMOUNT (0x4002353C) equals the RXD.MAXCNT
@@ -179,6 +181,26 @@ proc spim_setup {} {
     mww $SPIM_CONFIG 0; mww $SPIM_FREQUENCY 0x80000000; mww $SPIM_ORC 0xFF; mww $SPIM_ENABLE 7
 }
 
+# THE retained-page predicate -- the single implementation of constraint 4.
+# txlen/rxlen are the spans, in bytes, that TX_BUF and RX_BUF are about to have
+# written to them. Errors naming the offending buffer and its span so the caller
+# can move it. Arithmetic only; touches no hardware. Both spi_txn (per
+# transaction, with the real spans) and nor_read_max (with the 4-byte minimum a
+# transaction always writes) call this rather than open-coding the comparison,
+# so the two cannot drift apart.
+proc assert_off_retained {txlen rxlen} {
+    global TX_BUF RX_BUF RETAINED_LO RETAINED_HI
+    foreach {nm a sz} [list TX_BUF $TX_BUF $txlen RX_BUF $RX_BUF $rxlen] {
+        if {$sz < 1} { set sz 1 }
+        set end [expr {$a + $sz - 1}]
+        if {$a <= $RETAINED_HI && $end >= $RETAINED_LO} {
+            error "$nm 0x[format %08X $a]..0x[format %08X $end] ($sz bytes)\
+                   overlaps the retained page 0x20000000-0x200000FF, which holds\
+                   the boot bits -- move $nm. See constraint 4."
+        }
+    }
+}
+
 # One SPI transaction. txlist is the outgoing byte list; rxlen is how many extra
 # bytes to clock in after it. On return RX_BUF holds [llength $txlist] junk bytes
 # (clocked in while txlist went out) followed by rxlen payload bytes.
@@ -186,8 +208,17 @@ proc spi_txn {txlist rxlen} {
     global TX_BUF RX_BUF SPIM_TXD_PTR SPIM_TXD_MAXCNT SPIM_RXD_PTR SPIM_RXD_MAXCNT
     global SPIM_EVENTS_END P0_OUTCLR P0_OUTSET CS_BIT SPIM_TASKS_START
     global SPIM_RXD_AMOUNT SPIM_CHECK_AMOUNT
-    set n [llength $txlist]; write_memory $TX_BUF 8 $txlist
+    set n [llength $txlist]
     set want [expr {$n+$rxlen}]
+    # THE chokepoint for constraint 4. Every path that touches the buffers --
+    # nor_wake, nor_rdid, nor_status and nor_read_raw -- arrives here, and the
+    # first write below lands in TX_BUF, so the check must precede it. Putting
+    # this in spim_setup instead would only catch a bad layout at setup time and
+    # would be walked straight past by a caller who relocates a buffer
+    # afterwards, which is exactly what constraint 3 invites. Arithmetic only;
+    # touches no hardware.
+    assert_off_retained $n $want
+    write_memory $TX_BUF 8 $txlist
     mww $SPIM_TXD_PTR $TX_BUF; mww $SPIM_TXD_MAXCNT $n
     mww $SPIM_RXD_PTR $RX_BUF; mww $SPIM_RXD_MAXCNT $want
     mww $SPIM_EVENTS_END 0; mww $P0_OUTCLR $CS_BIT; mww $SPIM_TASKS_START 1
@@ -229,12 +260,10 @@ proc ab {a} { return [list [expr {($a>>16)&0xff}] [expr {($a>>8)&0xff}] [expr {$
 # placement. Arithmetic only -- touches no hardware. Also refuses to hand back a
 # limit at all if either scratch buffer overlaps the retained page.
 proc nor_read_max {} {
-    global TX_BUF RX_BUF RAM_END RETAINED_LO RETAINED_HI SPIM_MAXCNT_LIMIT
-    foreach {nm a sz} [list TX_BUF $TX_BUF 4 RX_BUF $RX_BUF 4] {
-        if {$a <= $RETAINED_HI && ($a+$sz-1) >= $RETAINED_LO} {
-            error "$nm 0x[format %08X $a] overlaps the retained page 0x20000000-0x200000FF"
-        }
-    }
+    global TX_BUF RX_BUF RAM_END SPIM_MAXCNT_LIMIT
+    # Same predicate spi_txn enforces per transaction, at the 4-byte minimum any
+    # transaction writes. One implementation, in assert_off_retained.
+    assert_off_retained 4 4
     # 16-bit MAXCNT; must not run off the end of RAM; must not run into TX_BUF.
     set lim [expr {$SPIM_MAXCNT_LIMIT}]
     set to_ramend [expr {$RAM_END - $RX_BUF}]
