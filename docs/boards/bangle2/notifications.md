@@ -434,11 +434,53 @@ RETURNED:
   in the log in full, and then STOPPED. No decision, no write to BlobDB, no
   transmission.
 
-The cause was not established. The image for the recovery firmware is in the
-external flash, which a write to the internal flash does not touch, so a lost
-image is NOT the evident explanation. The two directions to examine, neither of
-them tested: the newer firmware may report the metadata by a different path, or
-the operation that wrote the firmware may have changed the bits for the start.
+THE CAUSE IS NOW ESTABLISHED. ONE BIT IN THE RECOVERY IMAGE IS WRONG.
+
+A read of the external flash on 2026-08-04 gives an image at `0x000000` that is
+complete and correct in structure, of the expected length 451963, with a header
+whose stored sum is correct. The body of the image has ONE byte that is not
+correct, at `0x00500C` in the flash:
+
+```
+flash gives 0x5D        the correct value is 0x5C
+```
+
+That is one bit, at position 0, in the direction 0 to 1. In a flash of this
+kind a bit that goes from 0 to 1 is a loss of charge or a program operation
+that did not complete. It is NOT a write by another program.
+
+The result: the sum that the watch computes over the body does not agree with
+the sum in the header, and the watch says it has no recovery firmware. This is
+correct behaviour, not a fault of the report.
+
+The path, which anybody can read in the source:
+
+- `src/fw/system/version.c:91` `version_copy_recovery_fw_metadata` uses
+  `check_crc = true`.
+- `src/fw/system/version.c:65-69`: when the check fails, the function makes the
+  structure empty with `*out_metadata = (FirmwareMetadata){}` and gives `false`.
+- `system_versions.c:100` sends that empty structure to the phone.
+
+So the null value is the watch computing a sum, failing it, and reporting
+nothing. It is not the application, and it is not the identifier of the
+platform, which is a separate field (`SystemService.kt:361` and `:368` compute
+the two independently).
+
+A TEST THAT CAN REFUSE THIS EXPLANATION, which needs no tools: the menu
+`Settings` then `About` on the watch SHOULD still give the version of the
+recovery firmware, because `version_copy_recovery_fw_version` at `version.c:104`
+uses `check_crc = false` and does not make the sum. If the menu gives the
+version, the explanation holds. If it does not, the explanation is wrong.
+
+WHAT THIS MEANS FOR THE PROCEDURE ON THIS PAGE: the operation that wrote the
+recovery image did NOT read it back to confirm it. One bit that nobody
+confirmed removed the recovery path for four days, and the only sign was that
+notifications stopped. AFTER YOU WRITE A RECOVERY IMAGE, READ IT BACK AND
+COMPARE IT WITH THE FILE YOU SENT. The transfer gives an acknowledgement for
+every step and the acknowledgement does not mean the flash holds what you sent.
+
+(Diagnosis from pebble-color, who read the flash. The path in `version.c` I
+confirmed myself.)
 
 WHAT THIS MEANS FOR A PERSON AT THE BENCH: after you write a new firmware,
 confirm that `recoveryFwVersion` is not null BEFORE you decide that
