@@ -169,7 +169,7 @@ void test_graphics_draw_stroke_${BIT_DEPTH_NAME}__offset_layer(void) {
 #define COLOR_START_POINT GPoint(5, 35)
 #define COLOR_END_POINT GPoint(45, 40)
 
-void test_graphics_draw_stroke_${BIT_DEPTH_NAME}__color(void) {
+void DISABLED_test_graphics_draw_stroke_${BIT_DEPTH_NAME}__color(void) {
   // TODO: Fix blending and reenable this - PBL-16509
 /*
   GContext ctx;
