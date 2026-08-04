@@ -33,8 +33,12 @@ PBL_LOG_MODULE_DEFINE(driver_touch_cst816, CONFIG_DRIVER_TOUCH_LOG_LEVEL);
 #define CST816_POWER_MODE_REG         0xE5
 #define CST816_POWER_MODE_SLEEP       0x03
 #define CST816_CHIP_ID_REG            0xA7
+/* Chip ID values follow the Hynitron vendor tables carried in this tree, which
+ * are the authority here: 0xB5 is CST816T and 0xB6 is CST816D. See
+ * third_party/hal_sifli/SiFli-SDK/customer/peripherals/cst816/cst816.c and the
+ * chsc5816, cst918 and tp_cst918_0x15 peripherals alongside it. */
 #define CST816_CHIP_ID_CST816S        0xB4
-#define CST816_CHIP_ID_CST816T        0xB6
+#define CST816_CHIP_ID_CST816D        0xB6
 #define CST816_FW_VERSION_REG         0xA9
 #define CST816_TOUCH_DATA_REG         0x02
 #define CST816_TOUCH_DATA_SIZE        5
@@ -849,16 +853,17 @@ void touch_sensor_init(void) {
 
   uint8_t target_ver = app_bin[sizeof(app_bin) + CST816_FW_VER_INFO_INDEX];
 
-  // Only ever write firmware to a chip we can positively identify as a CST816S/T.
+  // Only ever write firmware to a chip we can positively identify as a CST816S/D.
   // An unrecognized chip ID means either a different part or a bad read; flashing
   // blindly based on fw_version alone could brick whatever is actually on the bus.
   bool chip_id_recognized =
-      (chip_id == CST816_CHIP_ID_CST816S) || (chip_id == CST816_CHIP_ID_CST816T);
+      (chip_id == CST816_CHIP_ID_CST816S) || (chip_id == CST816_CHIP_ID_CST816D);
 
-#ifdef CONFIG_SOC_NRF52
+#ifdef CONFIG_BOARD_BANGLE2
   // TEMPORARY bangle2 recovery: panel was mis-flashed with the getafix blob,
   // which self-reports chip ID 0xB5. Allow one recovery flash. Remove after
-  // recovery (chip reports 0xB6 once CST816D fw is installed).
+  // recovery (chip reports 0xB6 once CST816D fw is installed). Scoped to bangle2
+  // alone: this is a board-specific recovery path, not an nRF52 property.
   chip_id_recognized = chip_id_recognized || (chip_id == 0xB5);
 #endif
 
