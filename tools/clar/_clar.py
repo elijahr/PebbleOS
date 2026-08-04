@@ -16,12 +16,27 @@ TEST_FUNC_REGEX = r"^(void\s+(%s__(\w+))\(\s*void\s*\))\s*\{"
 EVENT_CB_REGEX = re.compile(r"^(void\s+clar_on_(\w+)\(\s*void\s*\))\s*\{", re.MULTILINE)
 
 # Deliberately more permissive than TEST_FUNC_REGEX: it tolerates leading
-# whitespace, an empty argument list and any suite stem, so that it matches the
-# test-shaped functions the strict regex silently skips.
+# whitespace, a storage-class qualifier, an empty argument list and any suite
+# stem, so that it matches the test-shaped functions the strict regex silently
+# skips. The separators are `\s`, like TEST_FUNC_REGEX, so that a definition
+# split across lines is still seen; a tolerant pattern that is stricter than the
+# strict one leaves a blind spot exactly where the guard is needed.
 TEST_FUNC_TOLERANT_REGEX = re.compile(
-    r"^([ \t]*)void[ \t]+((\w+)__(\w+))[ \t]*\([ \t]*(void)?[ \t]*\)[ \t]*\{",
+    r"^([ \t]*)((?:(?:static|inline|extern)\s+)*)"
+    r"void\s+((\w+)__(\w+))\s*\(\s*(void)?\s*\)\s*\{",
     re.MULTILINE,
 )
+
+# Preprocessor blocks that the compiler never sees. The guard must not report a
+# function that no build compiles; comments are already removed before it runs,
+# but `#if 0` is not a comment.
+DISABLED_BLOCK_START_REGEX = re.compile(r"^[ \t]*#[ \t]*if[ \t]+(?:0|FALSE)[ \t]*$")
+
+COND_START_REGEX = re.compile(r"^[ \t]*#[ \t]*if")
+
+COND_BRANCH_REGEX = re.compile(r"^[ \t]*#[ \t]*(?:else|elif)")
+
+COND_END_REGEX = re.compile(r"^[ \t]*#[ \t]*endif")
 
 # Naming conventions that mark a test as intentionally not registered:
 # a leading underscore, or a DISABLED_ / DISABLED__ prefix.
@@ -283,6 +298,31 @@ static const char *_clar_cat_${suite_name}[] = { "${categories}", NULL };
     def _get_modules(self):
         return "\n".join(self._load_file(f) for f in self.modules)
 
+    def _skip_disabled_blocks(self, text):
+        """Blank out `#if 0` / `#if FALSE` regions, keeping the line count."""
+        lines = []
+        depth = 0
+
+        for line in text.split("\n"):
+            if depth:
+                if COND_START_REGEX.match(line):
+                    depth += 1
+                elif COND_END_REGEX.match(line):
+                    depth -= 1
+                elif depth == 1 and COND_BRANCH_REGEX.match(line):
+                    depth = 0
+                lines.append("")
+                continue
+
+            if DISABLED_BLOCK_START_REGEX.match(line):
+                depth = 1
+                lines.append("")
+                continue
+
+            lines.append(line)
+
+        return "\n".join(lines)
+
     def _skip_comments(self, text):
         def _replacer(match):
             s = match.group(0)
@@ -307,10 +347,16 @@ static const char *_clar_cat_${suite_name}[] = { "${categories}", NULL };
         reached callback_data and report the difference.
         """
         problems = []
+        contents = self._skip_disabled_blocks(contents)
 
-        for ws, symbol, stem, _short, void_arg in TEST_FUNC_TOLERANT_REGEX.findall(
-            contents
-        ):
+        for (
+            ws,
+            qualifier,
+            symbol,
+            stem,
+            _short,
+            void_arg,
+        ) in TEST_FUNC_TOLERANT_REGEX.findall(contents):
             if INTENTIONALLY_DISABLED_REGEX.match(symbol):
                 continue
 
@@ -323,6 +369,10 @@ static const char *_clar_cat_${suite_name}[] = { "${categories}", NULL };
             reasons = []
             if ws:
                 reasons.append("the line does not start at column 0")
+            if qualifier:
+                reasons.append(
+                    "the return type is prefixed with `%s`" % qualifier.strip()
+                )
             if not void_arg:
                 reasons.append("the argument list is `()` and must be `(void)`")
             if stem != suite_name:
