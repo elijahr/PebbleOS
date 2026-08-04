@@ -419,6 +419,34 @@ and connected again. These things are true after this test:
 
 Therefore the correction is complete. The phone settings are not necessary.
 
+THE RESULT ABOVE IS TRUE OF ONE IMAGE, NOT OF THE WATCH FOR ALL TIME. It was
+measured on `v4.30.0-76-g8526296e` on 2026-07-28.
+
+On 2026-08-04 the watch carried `v4.30.0-112-g504e5f0df`, and the condition had
+RETURNED:
+
+- `recoveryFwVersion` was `null` again.
+- The log gave `ConnectedPebbleDeviceInRecovery` for the watch.
+- `isRecovery` was `false`, so the firmware that ran was not itself a recovery
+  image.
+- The link was in good order: the watch was joined over BLE with encryption.
+- A notification sent for a test was received by the application, was written
+  in the log in full, and then STOPPED. No decision, no write to BlobDB, no
+  transmission.
+
+The cause was not established. The image for the recovery firmware is in the
+external flash, which a write to the internal flash does not touch, so a lost
+image is NOT the evident explanation. The two directions to examine, neither of
+them tested: the newer firmware may report the metadata by a different path, or
+the operation that wrote the firmware may have changed the bits for the start.
+
+WHAT THIS MEANS FOR A PERSON AT THE BENCH: after you write a new firmware,
+confirm that `recoveryFwVersion` is not null BEFORE you decide that
+notifications are in good order. The watch gives no sign. The application shows
+the watch as joined. The notifications simply do not arrive, and the only trace
+is one line in the log that names a mode that nobody examines. The condition
+has the appearance of a fault of Bluetooth and is not one.
+
 Note for a test with `adb`: a notification from `adb` comes from the
 application `com.android.shell`. If that application is muted, the app gives
 `NotSentAppMuted` and sends nothing. This condition is not a fault. To test the
