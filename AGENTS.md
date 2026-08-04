@@ -134,14 +134,20 @@ change this: `APPROTECT` appears exactly once in the tree, as a comment in
 `src/fw/startup/startup_cortex_m.c`. Full detail and the measured register
 table: `docs/boards/bangle2/index.md`, "APPROTECT gate".
 
-Also note that external SPI-NOR has **zero backup coverage and cannot get
-any from a debug probe** — the part is not memory-mapped on this chip, so
-no probe reaches it regardless of quality. The BLE bond database
-(`gap_bonding_db` in `FLASH_REGION_FILESYSTEM`, mirrored into
-`FLASH_REGION_SHARED_PRF_STORAGE`) and the installed PRF image both live
-there. Only a custom flashloader driving SPIM2 from RAM can ever read or
-write that part, and it does not exist yet. Plan flashing decisions on the
-assumption that everything on external NOR is unrecoverable if lost.
+Also note the external SPI-NOR asymmetry. The part is not memory-mapped on
+this chip, so no probe can `dump_image` it directly — but that does NOT
+mean it is unreadable. **A host can drive the SPIM2 registers over SWD
+while the CPU is halted to make the chip read itself; no on-target code is
+needed.** That was proven 2026-07-30: a full two-read-verified 8 MB backup
+exists (`bangle2_extnor_8mb_2026-07-30T072739Z.bin`, sha256
+`407e9098…f93315`, in `~/Development/bangle2-swd-backups/`). So READS are
+solved. WRITES to the NOR still require a RAM-resident SPIM2 flashloader,
+which does not exist yet. The BLE bond database (`gap_bonding_db` in
+`FLASH_REGION_FILESYSTEM`, mirrored into `FLASH_REGION_SHARED_PRF_STORAGE`)
+and the installed PRF image both live there. Until the write path exists,
+plan flashing decisions on the assumption that external NOR can be BACKED
+UP but not yet RESTORED from a probe (restore paths today: BLE sideload for
+`SAFE_FIRMWARE`, and SWD for internal flash + UICR).
 
 The touch controller has the same property, for a different reason, and it
 is easy to miss because the instinct is to take a backup first. **There is

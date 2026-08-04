@@ -552,6 +552,11 @@ def _build_fw(bld):
         bld.recurse('src/fw/apps')
         _build_normal(bld)
 
+    # Standalone bootloader ELF at flash 0x0 (bangle2 / nRF52 only). Recursed
+    # after fw_includes is declared so it can borrow the nrfx/CMSIS includes.
+    if bld.env.CONFIG_BOARD_BANGLE2:
+        bld.recurse('src/boot')
+
 
 def build(bld):
     bld.DYNAMIC_RESOURCES = []

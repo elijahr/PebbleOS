@@ -2,7 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The recovery firmware shares the 1 MiB flash bank with the normal
-# firmware and is linked in the upper half.
+# firmware. It is NOT linked in the upper half -- this symbol only shrinks
+# the slot LENGTH to 512K. Both variants link at the SAME origin
+# (memory.ld:35 derives ORIGIN from FLASH_BASE + FLASH_OFFSET +
+# FIRMWARE_OFFSET, none of which vary by variant). The "upper half" wording
+# was inherited by bangle2 and corrected there on 2026-07-28; it is
+# corrected here for the same reason. Only the wording is corrected -- this
+# board's layout is not otherwise reviewed by that change.
 config FW_FLASH_SIZE
     default 0x80000 if RECOVERY_FW && !MFG
     default 0x100000

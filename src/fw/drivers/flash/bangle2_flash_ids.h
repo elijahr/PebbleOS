@@ -13,10 +13,31 @@
 
 #include <stdint.h>
 
-// Known parts. GD25Q64 (C8 40 17) is industry-standard-confirmed. XT25F64B
-// manufacturer byte 0x0B is CONFIRMED against flashrom's flashchips.h
-// (XTX_ID = 0x0B, XT25F64B model id 0x4017). The "Gordon hardware-corrected"
-// attribution stays INFERRED (not verifiable locally).
+// Known parts. GD25Q64 (C8 40 17) is industry-standard-confirmed, and the
+// GigaDevice part is what Espruino documents for this board: EspruinoDocs
+// info/Bangle.js2 Technical.md gives "8MB external flash (GD25Q64C/GD25Q64E)"
+// with datasheet links (verified 2026-07-28). Both revisions share this JEDEC
+// id, so the single constant covers them. NOTE that the Espruino board file
+// boards/BANGLEJS2.py names NO manufacturer -- it defines only the pins, the
+// 8 MB size, and memmap_base 0x60000000, which its own comment marks as a
+// mapping done "in software". That address is an Espruino addressing
+// convention, NOT an nRF52840 XIP window (the nRF52840 QSPI XIP region is
+// 0x12000000, and this board does not use QSPI at all -- see spi_nor.c).
+// XT25F64B manufacturer byte 0x0B is CONFIRMED against flashrom's
+// flashchips.h (XTX_ID = 0x0B, XT25F64B model id 0x4017).
+//
+// *** THE BENCH UNIT IS THE XTX PART, NOT GIGADEVICE. ***
+// An RDID (0x9F) read taken directly off this watch on 2026-07-30 returned
+// 0B 40 17 -- manufacturer 0x0B (XTX), type 0x40, capacity 0x17 (8 MB) --
+// which packs to BANGLE2_FLASH_JEDEC_XT25F64B (0x0017400B) and classifies as
+// Bangle2FlashIdKnownXT25F64B. So despite the Espruino docs naming only the
+// GigaDevice GD25Q64C/E, the silicon actually fitted to this unit is the XTX
+// XT25F64B. The read was host-driven SPIM2 over SWD (no on-target code); see
+// the R10 bootloader design doc section 12.1. Both parts share the standard
+// SPI-NOR command set (0x9F/0x03/0x06/0x20/0xD8/0x02 + WIP polling), so the
+// spi_nor driver is correct for either; the difference matters only for
+// vendor-specific timing/erase-suspend details. GD25Q64 (C8 40 17) is kept as
+// an accepted id too, since other units may carry it.
 #define BANGLE2_FLASH_JEDEC_GD25Q64 0x001740C8UL
 #define BANGLE2_FLASH_JEDEC_XT25F64B 0x0017400BUL
 // Third RDID byte 0x17 = 2^23 bytes = 8 MB, the load-bearing capacity guard.
