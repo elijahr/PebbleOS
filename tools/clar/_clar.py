@@ -15,6 +15,33 @@ TEST_FUNC_REGEX = r"^(void\s+(%s__(\w+))\(\s*void\s*\))\s*\{"
 
 EVENT_CB_REGEX = re.compile(r"^(void\s+clar_on_(\w+)\(\s*void\s*\))\s*\{", re.MULTILINE)
 
+# Deliberately more permissive than TEST_FUNC_REGEX: it tolerates leading
+# whitespace, a storage-class qualifier, an empty argument list and any suite
+# stem, so that it matches the test-shaped functions the strict regex silently
+# skips. The separators are `\s`, like TEST_FUNC_REGEX, so that a definition
+# split across lines is still seen; a tolerant pattern that is stricter than the
+# strict one leaves a blind spot exactly where the guard is needed.
+TEST_FUNC_TOLERANT_REGEX = re.compile(
+    r"^([ \t]*)((?:(?:static|inline|extern)\s+)*)"
+    r"void\s+((\w+)__(\w+))\s*\(\s*(void)?\s*\)\s*\{",
+    re.MULTILINE,
+)
+
+# Preprocessor blocks that the compiler never sees. The guard must not report a
+# function that no build compiles; comments are already removed before it runs,
+# but `#if 0` is not a comment.
+DISABLED_BLOCK_START_REGEX = re.compile(r"^[ \t]*#[ \t]*if[ \t]+(?:0|FALSE)[ \t]*$")
+
+COND_START_REGEX = re.compile(r"^[ \t]*#[ \t]*if")
+
+COND_BRANCH_REGEX = re.compile(r"^[ \t]*#[ \t]*(?:else|elif)")
+
+COND_END_REGEX = re.compile(r"^[ \t]*#[ \t]*endif")
+
+# Naming conventions that mark a test as intentionally not registered:
+# a leading underscore, or a DISABLED_ / DISABLED__ prefix.
+INTENTIONALLY_DISABLED_REGEX = re.compile(r"^(_+|DISABLED_+)")
+
 SKIP_COMMENTS_REGEX = re.compile(
     r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"', re.DOTALL | re.MULTILINE
 )
@@ -70,6 +97,8 @@ class ClarTestBuilder:
         self.suite_data = {}
         self.category_data = {}
         self.event_callbacks = []
+        self.current_file = None
+        self.registered_symbols = set()
 
         self.clar_path = os.path.abspath(clar_path) if clar_path else None
 
@@ -98,11 +127,13 @@ class ClarTestBuilder:
                 test_name = "_".join(module_root + [test_file[:-2]])
 
                 with open(full_path) as f:
+                    self.current_file = full_path
                     self._process_test_file(test_name, f.read())
 
     def load_file(self, filename):
-        with open(filename) as f:
+        with open(filename, encoding="latin-1") as f:
             test_name = os.path.basename(filename)[:-2]
+            self.current_file = filename
             self._process_test_file(test_name, f.read())
 
     def render(self):
@@ -267,6 +298,31 @@ static const char *_clar_cat_${suite_name}[] = { "${categories}", NULL };
     def _get_modules(self):
         return "\n".join(self._load_file(f) for f in self.modules)
 
+    def _skip_disabled_blocks(self, text):
+        """Blank out `#if 0` / `#if FALSE` regions, keeping the line count."""
+        lines = []
+        depth = 0
+
+        for line in text.split("\n"):
+            if depth:
+                if COND_START_REGEX.match(line):
+                    depth += 1
+                elif COND_END_REGEX.match(line):
+                    depth -= 1
+                elif depth == 1 and COND_BRANCH_REGEX.match(line):
+                    depth = 0
+                lines.append("")
+                continue
+
+            if DISABLED_BLOCK_START_REGEX.match(line):
+                depth = 1
+                lines.append("")
+                continue
+
+            lines.append(line)
+
+        return "\n".join(lines)
+
     def _skip_comments(self, text):
         def _replacer(match):
             s = match.group(0)
@@ -279,7 +335,64 @@ static const char *_clar_cat_${suite_name}[] = { "${categories}", NULL };
 
         self._process_events(contents)
         self._process_declarations(suite_name, contents)
+        self._check_registration(suite_name, contents)
         self._process_categories(suite_name, contents)
+
+    def _check_registration(self, suite_name, contents):
+        """Fail the build on a test-shaped function that did not register.
+
+        A function that looks like a clar test but does not match
+        TEST_FUNC_REGEX is skipped without a word, so a typo in a name silently
+        deletes a test. Compare what the file defines against what actually
+        reached callback_data and report the difference.
+        """
+        problems = []
+        contents = self._skip_disabled_blocks(contents)
+
+        for (
+            ws,
+            qualifier,
+            symbol,
+            stem,
+            _short,
+            void_arg,
+        ) in TEST_FUNC_TOLERANT_REGEX.findall(contents):
+            if INTENTIONALLY_DISABLED_REGEX.match(symbol):
+                continue
+
+            if not symbol.startswith("test_"):
+                continue
+
+            if symbol in self.registered_symbols:
+                continue
+
+            reasons = []
+            if ws:
+                reasons.append("the line does not start at column 0")
+            if qualifier:
+                reasons.append(
+                    "the return type is prefixed with `%s`" % qualifier.strip()
+                )
+            if not void_arg:
+                reasons.append("the argument list is `()` and must be `(void)`")
+            if stem != suite_name:
+                reasons.append(
+                    "the suite stem is `%s` and must be `%s` to match the source "
+                    "file name" % (stem, suite_name)
+                )
+            if not reasons:
+                reasons.append("it does not match %r" % (TEST_FUNC_REGEX % suite_name))
+
+            problems.append("  %s: %s" % (symbol, "; ".join(reasons)))
+
+        if problems:
+            raise RuntimeError(
+                "%s: test-shaped functions were not registered by clar and would "
+                "never run:\n%s\nRename them so they match "
+                "`void %s__<name>(void)` at column 0, or mark them intentionally "
+                "disabled with a leading underscore or a DISABLED_ prefix."
+                % (self.current_file or suite_name, "\n".join(problems), suite_name)
+            )
 
     def _process_events(self, contents):
         for decl, event in EVENT_CB_REGEX.findall(contents):
@@ -292,11 +405,13 @@ static const char *_clar_cat_${suite_name}[] = { "${categories}", NULL };
     def _process_declarations(self, suite_name, contents):
         callbacks = []
         initialize = cleanup = None
+        self.registered_symbols = set()
 
         regex_string = TEST_FUNC_REGEX % suite_name
         regex = re.compile(regex_string, re.MULTILINE)
 
         for declaration, symbol, short_name in regex.findall(contents):
+            self.registered_symbols.add(symbol)
             data = {
                 "short_name": short_name,
                 "declaration": declaration,

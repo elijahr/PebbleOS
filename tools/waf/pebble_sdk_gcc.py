@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from waflib.Configure import conf
-from waflib.Errors import BuildError
+from waflib.Errors import WafError
 
 import inject_metadata
 
@@ -164,8 +164,8 @@ def gen_inject_metadata_rule(
         # the raw binary around to inspect just in case anything went wrong while we were injecting
         # metadata.
         cp_result = task.exec_command('cp "{}" "{}"'.format(bin_path, tgt_path))
-        if cp_result < 0:
-            raise BuildError("Failed to copy %s to %s!" % (bin_path, tgt_path))
+        if cp_result != 0:
+            raise WafError("Failed to copy %s to %s!" % (bin_path, tgt_path))
 
         # Now actually inject the metadata into the new copy of the binary.
         inject_metadata.inject_metadata(
