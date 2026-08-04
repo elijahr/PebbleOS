@@ -84,6 +84,16 @@ After the reconnection, these things must be true:
 
 - The Devices tab shows `Connected`. Before the change it showed
   `Connected (Factory)`.
+
+  Use this one only as an indication, NOT as proof. The state that the tab
+  shows can stay behind the true state: on 2026-08-03 the tab gave a button
+  `Disconnect`, which means a connection, while the Bluetooth system of the
+  phone gave `STATE_DISCONNECTED` for every client and no watch held a
+  connection at all. To know the true state, ask the system of the phone:
+
+  ```
+  adb -s <device> shell dumpsys bluetooth_manager | grep "mConnectionState"
+  ```
 - The log has no line `ConnectedPebbleDeviceInRecovery`.
 - The log shows that BlobDB started: `BlobDB2Command$Version`, then
   `BlobDb version: 1`, then `MarkAllDirty`, then a group of inserts.
@@ -246,6 +256,35 @@ The only use of the symbol is at `src/fw/resource/system_resource.c:28`. There
 is no use of the symbol in `prf_update`.
 
 ### Cautions for this procedure
+
+- DANGER IF YOU CHANGE THE IMAGE. This procedure sends a recovery image. A
+  recovery bundle has no block of resources, so the application sends the
+  firmware only. IF YOU USE THE SAME PROCEDURE WITH A NORMAL FIRMWARE BUNDLE,
+  THE APPLICATION ALSO SENDS THE RESOURCES, and that operation can destroy the
+  only copy of the pack of resources.
+
+  The reason: the installation of resources writes to the bank that is not in
+  use. When the watch has a valid pack, that bank is the other one, and the
+  choice is safe. When the watch has NO valid pack, the choice becomes random
+  (`resource_storage_flash.c:78` uses `rand()`), so there is one chance in two
+  that it writes over the good bank. A watch that has a new firmware and an old
+  pack has no valid pack. The mono pack at `0x200000` is the only copy, the
+  external flash has no backup that anybody can make again, and the panic
+  screen does not stop this: Bluetooth and the transfer of bytes continue to
+  operate.
+
+  Therefore, if you must change the platform: SEND THE RESOURCES FIRST, while
+  the old firmware still starts, THEN write the new firmware. Never the
+  opposite order. (Analysis from pebble-color.)
+
+- Do not trust the screen of the application to tell you that a transfer
+  failed. A refusal by the safety check goes to the state `Idle` with no
+  message on the screen (`FirmwareUpdater.kt:345-347`), and nothing in the
+  application reads the record of the failure. `Idle` with no error DOES NOT
+  mean that the transfer was successful. The signal that has meaning is the
+  progress that goes past 50 per cent, which is the point where the firmware
+  ends and the resources begin, and then the message `Waiting for reboot`. Use
+  the log for anything else.
 
 - An update of the recovery firmware alone does not make the watch restart.
   Make the reset by hand.
